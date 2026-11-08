@@ -1,0 +1,19 @@
+{
+  "name": "@maya/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "maya": "./dist/main.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly"
+  },
+  "dependencies": {
+    "@maya/core": "workspace:*",
+    "@maya/shared-types": "workspace:*",
+    "commander": "^12.1.0"
+  }
+}
