@@ -49,6 +49,11 @@ export class EventStore {
     this.db.exec(SCHEMA);
   }
 
+  /** Shared handle for the other tables (tasks) that live in the same file. */
+  get database(): Database.Database {
+    return this.db;
+  }
+
   get journalMode(): string {
     const rows = this.db.pragma("journal_mode") as Array<{ journal_mode: string }>;
     return rows[0]?.journal_mode ?? "unknown";

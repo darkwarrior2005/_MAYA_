@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
@@ -12,6 +12,36 @@ import type {
   AgentRunOptions,
   AgentRunResult,
 } from "../src/adapters/adapter.js";
+
+const cleanups: Array<() => void> = [];
+
+/** Teardown registered at setup time, so a failing assertion still releases handles. */
+export function onCleanup(fn: () => void): void {
+  cleanups.push(fn);
+}
+
+/**
+ * Windows holds handles on git objects and the SQLite WAL slightly longer than
+ * the process does, so removal retries and then gives up — leaving a temp dir
+ * behind must never fail a test.
+ */
+export function runCleanups(): void {
+  for (const cleanup of cleanups.splice(0)) {
+    try {
+      cleanup();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function safeRemove(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch {
+    // the OS temp sweeper will get it
+  }
+}
 
 export async function makeTempRepo(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "maya-test-"));
@@ -27,7 +57,11 @@ export async function makeTempRepo(): Promise<string> {
 export interface StubBehavior {
   /** Events the agent emits before finishing. */
   events?: AgentEvent[];
-  /** Files the agent writes into the repo, as path -> contents. */
+  /**
+   * Files the agent writes into the repo, as path -> contents.
+   * `{agent}` in the contents is replaced with the agent id, so two workers
+   * can be made to write genuinely different text to the same path.
+   */
   writes?: Record<string, string>;
   ok?: boolean;
   /** Never emit anything and never finish, to exercise the watchdog. */
@@ -65,7 +99,7 @@ export class StubAdapter implements AgentAdapter {
         for (const [relative, contents] of Object.entries(behavior.writes ?? {})) {
           const target = joinPath(options.cwd, relative);
           mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, contents, "utf8");
+          writeFileSync(target, contents.replaceAll("{agent}", options.agentId), "utf8");
         }
         resolve({ ok: behavior.ok ?? true, stalled: false });
       }, 5);

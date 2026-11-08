@@ -8,7 +8,8 @@ import {
   TaskRunner,
   loadConfig,
 } from "@maya/core";
-import type { AgentDescriptor, BusEvent } from "@maya/shared-types";
+import type { AgentDescriptor } from "@maya/shared-types";
+import { printEvent } from "../render.js";
 
 interface RunOptions {
   dir: string;
@@ -66,32 +67,4 @@ export function registerRun(program: Command): void {
       store.close();
       process.exitCode = outcome.ok ? 0 : 1;
     });
-}
-
-function printEvent(event: BusEvent): void {
-  const payload = event.payload;
-  switch (payload.type) {
-    case "text":
-      process.stdout.write(payload.text.endsWith("\n") ? payload.text : `${payload.text}\n`);
-      break;
-    case "tool_call":
-      console.log(`  · ${payload.toolName}`);
-      break;
-    case "status":
-      console.log(`[${event.agentId}] ${payload.status}${payload.detail ? ` — ${payload.detail}` : ""}`);
-      break;
-    case "error":
-      console.error(`[${event.agentId}] error: ${payload.message}`);
-      break;
-    case "task_assigned":
-      console.log(`[maya] ${payload.agentId} → ${payload.branch}: ${payload.summary}`);
-      break;
-    case "merge_result":
-      console.log(
-        `[maya] merge ${payload.branch}: ${payload.merged ? "ok" : `blocked (${payload.conflicts.join(", ") || "unclean tree"})`}`,
-      );
-      break;
-    default:
-      break;
-  }
 }

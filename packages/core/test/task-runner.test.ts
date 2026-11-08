@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import { EventStore } from "../src/bus/event-store.js";
 import { RepoManager } from "../src/git/repo-manager.js";
 import { MergeService } from "../src/git/merge-service.js";
 import { TaskRunner } from "../src/orchestrator/task-runner.js";
-import { makeTempRepo, StubAdapter } from "./helpers.js";
+import { makeTempRepo, onCleanup, runCleanups, safeRemove, StubAdapter } from "./helpers.js";
 
 const agent: AgentDescriptor = {
   id: "worker-1",
@@ -17,18 +17,15 @@ const agent: AgentDescriptor = {
   displayName: "Stub Worker",
 };
 
-const dirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(runCleanups);
 
 async function setup(adapter: StubAdapter) {
   const dir = await makeTempRepo();
-  dirs.push(dir);
   const repo = new RepoManager(dir);
   await repo.openOrInit();
   const store = new EventStore(repo.paths.dbFile);
+  onCleanup(() => store.close());
+  onCleanup(() => safeRemove(dir));
   const bus = new EventBus(store);
   return { dir, repo, store, runner: new TaskRunner(repo, adapter, bus) };
 }
@@ -61,12 +58,11 @@ describe("TaskRunner", () => {
     expect(types).toContain("merge_result");
     expect(types).toContain("task_completed");
 
-    store.close();
   });
 
   it("leaves work on its branch and never merges when the agent fails", async () => {
     const adapter = new StubAdapter({ ok: false, writes: { "partial.txt": "half done\n" } });
-    const { dir, store, runner } = await setup(adapter);
+    const { dir, runner } = await setup(adapter);
 
     const outcome = await runner.run({ instruction: "do something broken", agent });
 
@@ -74,12 +70,11 @@ describe("TaskRunner", () => {
     expect(outcome.merged).toBe(false);
     expect(existsSync(join(dir, "partial.txt"))).toBe(false); // back on main, work isolated
 
-    store.close();
   });
 
   it("does not merge a stalled agent's work", async () => {
     const adapter = new StubAdapter({ hang: true });
-    const { store, runner } = await setup(adapter);
+    const { runner } = await setup(adapter);
 
     const outcome = await runner.run({
       instruction: "hang forever",
@@ -91,14 +86,13 @@ describe("TaskRunner", () => {
     expect(outcome.merged).toBe(false);
     expect(adapter.killed).toBe(true);
 
-    store.close();
   });
 });
 
 describe("MergeService", () => {
   it("refuses a conflicting merge, aborts it, and reports the conflicted files", async () => {
     const dir = await makeTempRepo();
-    dirs.push(dir);
+    onCleanup(() => safeRemove(dir));
     const git = simpleGit(dir);
 
     writeFileSync(join(dir, "shared.txt"), "base\n");

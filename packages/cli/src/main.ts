@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { registerInit } from "./commands/init.js";
 import { registerRun } from "./commands/run.js";
+import { registerStart } from "./commands/start.js";
 import { registerDoctor } from "./commands/doctor.js";
 
 const program = new Command();
@@ -13,6 +14,7 @@ program
 
 registerInit(program);
 registerRun(program);
+registerStart(program);
 registerDoctor(program);
 
 program.parseAsync(process.argv).catch((error: unknown) => {

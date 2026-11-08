@@ -20,9 +20,12 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.5",
     "@maya/shared-types": "workspace:*",
     "better-sqlite3": "^13.0.3",
-    "simple-git": "^3.27.0"
+    "node-pty": "^1.1.0",
+    "simple-git": "^3.27.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12"
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/ws": "^8.5.13"
   }
 }

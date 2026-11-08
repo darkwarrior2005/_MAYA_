@@ -9,6 +9,12 @@ export interface WorkerProfile {
   model?: string;
   /** Seconds of silence before the liveness watchdog declares the agent stalled. */
   stallTimeoutSec: number;
+  /**
+   * Off by default for the subprocess-driven tools: Copilot CLI and Antigravity
+   * CLI each need a one-time interactive login and are less settled than the
+   * SDK path, so a project opts into them deliberately.
+   */
+  enabled: boolean;
 }
 
 export interface MayaConfig {
@@ -26,6 +32,7 @@ export const defaultConfig = (): MayaConfig => ({
     tool: "claude-code",
     displayName: "Operator",
     stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
+    enabled: true,
   },
   workers: [
     {
@@ -33,9 +40,28 @@ export const defaultConfig = (): MayaConfig => ({
       tool: "claude-code",
       displayName: "Worker (Claude Code)",
       stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
+      enabled: true,
+    },
+    {
+      id: "worker-copilot",
+      tool: "copilot-cli",
+      displayName: "Worker (Copilot CLI)",
+      stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
+      enabled: false,
+    },
+    {
+      id: "worker-antigravity",
+      tool: "antigravity-cli",
+      displayName: "Worker (Antigravity CLI)",
+      stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
+      enabled: false,
     },
   ],
 });
+
+export function enabledWorkers(config: MayaConfig): WorkerProfile[] {
+  return config.workers.filter((worker) => worker.enabled);
+}
 
 /** Resolves every path Maya owns inside a managed project. */
 export class MayaPaths {
