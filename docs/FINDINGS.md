@@ -111,6 +111,17 @@ the lanes come out unreadable.
 run. `maya init` does it; a test that calls only `paths.ensureDirs()` will see
 `clean: false` and the reason is `.maya/` itself.
 
+**An agent can only use a channel it was told about.** The secret channel is
+a marker (`@user` at the start of a line) in the agent's own output, because a
+wrapped CLI has no other way to say anything. `withSecretChannel()` appends the
+briefing to every instruction; without it the feature is dead code.
+
+**Render a pending question from events, not from the resolver.** The resolver
+object lives in whichever process owns the Operator. A pane attached from
+another process has the events but not the object, so deriving the prompt from
+`conflict_prompt` minus a matching `conflict_resolved` is what lets every view
+show it — and posting the answer is what lets every view answer it.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

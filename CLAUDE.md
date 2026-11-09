@@ -12,8 +12,8 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-Phases 0–4 are done; Phase 5 (secret channel, conflict UI, roster and info
-panels) is next.
+Phases 0–5 are done; Phase 6 (adapter plugins, packaging, daemon re-attach)
+is next.
 
 ## Commands
 
@@ -42,6 +42,7 @@ optional `node-pty`:
 
 ```bash
 node tools/verify/panes.mjs      # 23 checks in a real pseudoconsole
+node tools/verify/conflict.mjs   # a merge question in a pane, answered
 node tools/verify/live-run.mjs   # a real agent run; costs money
 ```
 
@@ -56,6 +57,7 @@ node tools/verify/live-run.mjs   # a real agent run; costs money
 | `packages/core/src/bus` | Append-only SQLite event log and the in-process bus. |
 | `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, the HTTP API and the built web client on one port, watches the repository, writes `.maya/daemon.lock`. |
 | `packages/core/src/persistence` | Paired `.md`/`.html` context snapshots. |
+| `packages/core/src/usage` | Rolls the event log up into per-agent and per-model totals. |
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
 | `packages/web-client` | React + Vite: git tree, repository browser, chat. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
@@ -65,7 +67,7 @@ Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 
 ## Invariants
 
-Eleven rules. Breaking one of these is a correctness bug, not a style question. Most are here
+Twelve rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
 1. **The Operator alone merges.** A stalled or failed worker's branch is never
@@ -85,16 +87,20 @@ because they were broken once already.
    clients resume from their own high-water mark — so a row written from
    outside is skipped permanently, not caught up later. Anything else that
    needs to say something posts to `/api/message`.
-7. **Durable events and transient signals stay apart.** An event is a row in
+7. **A merge question is answered through the daemon**, by the pane and the
+   browser alike, and rendered from the event stream rather than from the
+   resolver — otherwise a view in another process can show the question but
+   not answer it.
+8. **Durable events and transient signals stay apart.** An event is a row in
    the log, replayable by id. A signal (`files_changed`) says only "re-read
    it" and is never stored.
-8. **Agent text is untrusted** for rendering: strip escape sequences before it
+9. **Agent text is untrusted** for rendering: strip escape sequences before it
    is drawn.
-9. **Every line the layout emits is exactly `cols` wide and contains no escape
+10. **Every line the layout emits is exactly `cols` wide and contains no escape
    sequences**, so a line's length is its visible width.
-10. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
+11. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
     `.gitignore`.
-11. **Context snapshots are written temp-then-rename with retries**, and a
+12. **Context snapshots are written temp-then-rename with retries**, and a
     failed snapshot logs and skips rather than crashing the daemon.
 
 ## Conventions

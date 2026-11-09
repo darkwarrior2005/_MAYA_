@@ -8,13 +8,14 @@ import { EventBus } from "../src/bus/event-bus.js";
 import { EventStore } from "../src/bus/event-store.js";
 import { MayaPaths, defaultConfig, excludeStateDirFromGit } from "../src/config/maya-config.js";
 import { Daemon } from "../src/daemon/server.js";
+import { DeferredConflictResolver } from "../src/orchestrator/conflict-resolver.js";
 import { resolveWithin } from "../src/daemon/http-api.js";
 import type { RepoTree } from "../src/git/file-tree.js";
 import { makeTempRepo, onCleanup, runCleanups, safeRemove } from "./helpers.js";
 
 afterEach(runCleanups);
 
-async function serve(options: { withClient?: boolean } = {}) {
+async function serve(options: { withClient?: boolean; answerable?: boolean } = {}) {
   const repoRoot = await makeTempRepo();
   const git = simpleGit(repoRoot);
   writeFileSync(join(repoRoot, "README.md"), "# project\n", "utf8");
@@ -40,6 +41,7 @@ async function serve(options: { withClient?: boolean } = {}) {
     writeFileSync(join(clientDir, "assets", "style.css"), "body{}", "utf8");
   }
 
+  const conflicts = options.answerable ? new DeferredConflictResolver(bus) : undefined;
   const daemon = new Daemon({
     paths,
     bus,
@@ -51,6 +53,7 @@ async function serve(options: { withClient?: boolean } = {}) {
       bus,
       config: defaultConfig(),
       ...(clientDir ? { clientDir } : {}),
+      ...(conflicts ? { conflicts } : {}),
     },
   });
   await daemon.start();
@@ -63,7 +66,13 @@ async function serve(options: { withClient?: boolean } = {}) {
   });
 
   const get = async (path: string): Promise<Response> => fetch(`${daemon.address}${path}`);
-  return { daemon, bus, store, repoRoot, get, clientDir };
+  const post = async (path: string, body: unknown): Promise<Response> =>
+    fetch(`${daemon.address}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  return { daemon, bus, store, repoRoot, get, post, clientDir, conflicts };
 }
 
 describe("the daemon's HTTP API", () => {
@@ -253,5 +262,88 @@ describe("live signals", () => {
     // long session of saves cannot bloat the event store.
     expect(store.latestId()).toBe(before);
     expect(events).toHaveLength(0);
+  });
+});
+
+describe("usage and merge questions over HTTP", () => {
+  it("rolls usage up for the info panel", async () => {
+    const { get, bus } = await serve();
+    bus.publish("main", "worker-a", "status", {
+      type: "status",
+      agentId: "worker-a",
+      status: "running",
+      detail: "model claude-opus-5",
+    });
+    bus.publish("main", "worker-a", "usage", {
+      type: "usage",
+      agentId: "worker-a",
+      usage: { inputTokens: 4, outputTokens: 220, cacheReadTokens: 43_093, costUsd: 0.41 },
+    });
+
+    const usage = (await (await get("/api/usage")).json()) as {
+      byAgent: Record<string, { cacheReadTokens?: number }>;
+      byModel: Record<string, unknown>;
+      total: { costUsd?: number };
+    };
+
+    expect(usage.byAgent["worker-a"]?.cacheReadTokens).toBe(43_093);
+    expect(Object.keys(usage.byModel)).toEqual(["claude-opus-5"]);
+    expect(usage.total.costUsd).toBeCloseTo(0.41, 2);
+  });
+
+  it("answers the Operator's question from the web", async () => {
+    const { get, post, conflicts } = await serve({ answerable: true });
+    const asked = conflicts?.resolve({
+      question: "src/a.ts conflicts. How should this be handled?",
+      options: [
+        { id: "hold", label: "Keep the branch" },
+        { id: "discard", label: "Abandon it" },
+      ],
+    });
+    await Promise.resolve();
+
+    const state = (await (await get("/api/conflict")).json()) as {
+      answerable: boolean;
+      pending: { question: string } | null;
+    };
+    expect(state.answerable).toBe(true);
+    expect(state.pending?.question).toContain("src/a.ts conflicts");
+
+    // "2" means the same thing here as typed at the terminal prompt.
+    expect((await post("/api/conflict", { answer: "2" })).status).toBe(200);
+    await expect(asked).resolves.toEqual({ chosen: "discard", custom: false });
+  });
+
+  it("accepts an answer in the user's own words", async () => {
+    const { post, conflicts } = await serve({ answerable: true });
+    const asked = conflicts?.resolve({
+      question: "how?",
+      options: [{ id: "hold", label: "Keep the branch" }],
+    });
+    await Promise.resolve();
+
+    await post("/api/conflict", { answer: "rebase it onto main and rerun the tests" });
+    await expect(asked).resolves.toEqual({
+      chosen: "rebase it onto main and rerun the tests",
+      custom: true,
+    });
+  });
+
+  it("reports a question answered elsewhere as a race, not a failure", async () => {
+    const { post, conflicts } = await serve({ answerable: true });
+    void conflicts?.resolve({ question: "how?", options: [{ id: "hold", label: "Keep it" }] });
+    await Promise.resolve();
+
+    // The terminal got there first.
+    conflicts?.answer("1");
+    const second = await post("/api/conflict", { answer: "1" });
+    expect(second.status).toBe(409);
+  });
+
+  it("says so when this session answers in its own terminal", async () => {
+    const { get, post } = await serve();
+    const state = (await (await get("/api/conflict")).json()) as { answerable: boolean };
+    expect(state.answerable).toBe(false);
+    expect((await post("/api/conflict", { answer: "1" })).status).toBe(409);
   });
 });

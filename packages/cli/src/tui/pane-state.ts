@@ -1,4 +1,4 @@
-import type { AgentStatus, BusEvent, TokenUsage } from "@maya/shared-types";
+import type { AgentStatus, BusEvent, ConflictOption, TokenUsage } from "@maya/shared-types";
 import type { PaneView } from "./layout.js";
 
 export interface PaneSpec {
@@ -19,6 +19,12 @@ export interface PaneBuffer {
 export const MAX_PANE_LINES = 800;
 
 export const OPERATOR_PANE = "operator";
+
+export interface PendingConflict {
+  promptId: string;
+  question: string;
+  options: ConflictOption[];
+}
 
 /**
  * Events the Operator owns rather than any one worker: assignments, merges and
@@ -45,6 +51,7 @@ export class PaneStore {
   readonly workers: PaneBuffer[];
   private focusIndex = 0;
   private seen = 0;
+  private conflict: PendingConflict | undefined;
 
   constructor(operator: PaneSpec, workers: PaneSpec[]) {
     this.operator = blankPane(operator);
@@ -54,6 +61,16 @@ export class PaneStore {
   /** The highest event id applied, used to resume a dropped socket. */
   get lastSeenId(): number {
     return this.seen;
+  }
+
+  /**
+   * The question the Operator is waiting on, taken from the event stream
+   * rather than from a resolver object. The resolver lives in whichever
+   * process owns the Operator; the events reach every view, so this is what
+   * lets an attached pane show the same prompt the browser shows.
+   */
+  get pendingConflict(): PendingConflict | undefined {
+    return this.conflict;
   }
 
   get panes(): PaneBuffer[] {
@@ -91,6 +108,17 @@ export class PaneStore {
 
     const pane = this.paneFor(this.routeOf(event));
     const payload = event.payload;
+
+    if (payload.type === "conflict_prompt") {
+      this.conflict = {
+        promptId: payload.promptId,
+        question: payload.question,
+        options: payload.options,
+      };
+    }
+    if (payload.type === "conflict_resolved" && this.conflict?.promptId === payload.promptId) {
+      this.conflict = undefined;
+    }
 
     if (payload.type === "status") pane.status = payload.status;
     if (payload.type === "done") pane.status = payload.ok ? "done" : "error";

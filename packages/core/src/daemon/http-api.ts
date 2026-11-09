@@ -7,7 +7,9 @@ import type { EventBus } from "../bus/event-bus.js";
 import type { EventStore } from "../bus/event-store.js";
 import { buildFileTree } from "../git/file-tree.js";
 import { buildGraph } from "../git/graph-builder.js";
+import type { DeferredConflictResolver } from "../orchestrator/conflict-resolver.js";
 import { TaskQueue } from "../orchestrator/task-queue.js";
+import { aggregateUsage } from "../usage/token-tracker.js";
 
 export interface WebApiDeps {
   repoRoot: string;
@@ -17,6 +19,11 @@ export interface WebApiDeps {
   config: MayaConfig;
   /** Directory of the built web client. Omitted means it was never built. */
   clientDir?: string;
+  /**
+   * Lets the web answer the Operator's merge questions. Omitted when nothing
+   * in this process can be waiting on one, as in `maya web`.
+   */
+  conflicts?: DeferredConflictResolver;
 }
 
 /** Largest request body accepted. The only POST carries one chat line. */
@@ -111,6 +118,50 @@ async function handleApi(
   if (route === "/api/events" && request.method === "GET") {
     const since = Number(url.searchParams.get("since") ?? "0");
     send(response, 200, deps.store.since(Number.isFinite(since) ? since : 0));
+    return;
+  }
+
+  if (route === "/api/usage" && request.method === "GET") {
+    send(response, 200, aggregateUsage(deps.store.since(0)));
+    return;
+  }
+
+  if (route === "/api/conflict" && request.method === "GET") {
+    // The pending question, so a client that loads mid-question still shows
+    // it rather than waiting for an event it already missed.
+    const pending = deps.conflicts?.pending;
+    send(response, 200, {
+      answerable: deps.conflicts !== undefined,
+      pending: pending ?? null,
+    });
+    return;
+  }
+
+  if (route === "/api/conflict" && request.method === "POST") {
+    if (!deps.conflicts) {
+      send(response, 409, { error: "this session answers merge questions in its own terminal" });
+      return;
+    }
+    const body = await readBody(request);
+    if (body === null) {
+      send(response, 413, { error: `body larger than ${MAX_BODY_BYTES} bytes` });
+      return;
+    }
+    let answer = "";
+    try {
+      answer = String((JSON.parse(body) as { answer?: unknown }).answer ?? "").trim();
+    } catch {
+      send(response, 400, { error: "expected JSON with an answer field" });
+      return;
+    }
+    if (!answer) {
+      send(response, 400, { error: "answer is required" });
+      return;
+    }
+    // False means the question was already answered — in the terminal, or by
+    // another browser. That is a race, not an error worth alarming about.
+    const accepted = deps.conflicts.answer(answer);
+    send(response, accepted ? 200 : 409, accepted ? { ok: true } : { error: "already answered" });
     return;
   }
 

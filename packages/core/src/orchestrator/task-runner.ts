@@ -7,6 +7,7 @@ import { BranchManager } from "../git/branch-manager.js";
 import { MergeService } from "../git/merge-service.js";
 import type { RepoManager } from "../git/repo-manager.js";
 import { ContextWriter } from "../persistence/context-writer.js";
+import { SECRET_CHANNEL_BRIEFING, publishAgentEvent } from "./secret-channel.js";
 
 export interface TaskRunInput {
   instruction: string;
@@ -76,7 +77,7 @@ export class TaskRunner {
       await this.adapter.start({
         agentId: input.agent.id,
         cwd: this.repo.repoRoot,
-        prompt: input.instruction,
+        prompt: withSecretChannel(input.instruction),
         ...(input.agent.model ? { model: input.agent.model } : {}),
         ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),
         ...(input.deniedTools ? { deniedTools: input.deniedTools } : {}),
@@ -87,7 +88,7 @@ export class TaskRunner {
     handle.onEvent((event) => {
       if (event.type === "text") transcript.push(event.text);
       if (event.type === "tool_call") transcript.push(`[tool] ${event.toolName}`);
-      this.bus.publish("main", input.agent.id, event.type, event);
+      publishAgentEvent(this.bus, input.agent.id, event);
     });
 
     const result = await handle.waitForCompletion();
@@ -152,6 +153,17 @@ export class TaskRunner {
       ...(merge.message && !merge.merged ? { error: merge.message } : {}),
     };
   }
+}
+
+/**
+ * Agents cannot use the secret channel they were never told about, so the
+ * briefing rides along with every instruction.
+ */
+export function withSecretChannel(instruction: string): string {
+  return `${instruction}
+
+---
+${SECRET_CHANNEL_BRIEFING}`;
 }
 
 function firstLine(text: string): string {

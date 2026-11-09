@@ -11,7 +11,9 @@ import type { RepoManager } from "../git/repo-manager.js";
 import { WorktreeManager } from "../git/worktree-manager.js";
 import { ContextWriter } from "../persistence/context-writer.js";
 import type { ConflictResolver } from "./conflict-resolver.js";
+import { publishAgentEvent } from "./secret-channel.js";
 import type { TaskQueue } from "./task-queue.js";
+import { withSecretChannel } from "./task-runner.js";
 
 export interface OperatorDeps {
   repo: RepoManager;
@@ -155,7 +157,7 @@ export class Operator {
       await adapter.start({
         agentId: profile.id,
         cwd: worktree.path,
-        prompt: task.instruction,
+        prompt: withSecretChannel(task.instruction),
         ...(profile.model ? { model: profile.model } : {}),
         ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
         ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
@@ -166,7 +168,7 @@ export class Operator {
     handle.onEvent((event) => {
       if (event.type === "text") transcript.push(event.text);
       if (event.type === "tool_call") transcript.push(`[tool] ${event.toolName}`);
-      this.deps.bus.publish("main", profile.id, event.type, event);
+      publishAgentEvent(this.deps.bus, profile.id, event);
     });
 
     const result = await handle.waitForCompletion();

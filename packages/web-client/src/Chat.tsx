@@ -32,7 +32,11 @@ export function Chat({ events }: { events: BusEvent[] }): ReactElement {
     }
   };
 
-  const shown = events.filter((event) => describe(event) !== null);
+  // The secret channel has its own panel. Repeating it here would put it back
+  // in the Operator's transcript, which is the one thing it exists to avoid.
+  const shown = events.filter(
+    (event) => event.channel !== "secret" && describe(event) !== null,
+  );
 
   return (
     <div className="chat">
@@ -74,7 +78,6 @@ function Line({ event }: { event: BusEvent }): ReactElement {
     <article className={`line line-${kind(event)}`}>
       <header>
         <span className="who">{who}</span>
-        {event.channel === "secret" && <span className="badge secret">secret</span>}
         <time dateTime={event.createdAt}>{event.createdAt.slice(11, 19)}</time>
       </header>
       <p>{described}</p>

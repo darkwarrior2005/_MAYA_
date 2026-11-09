@@ -97,6 +97,21 @@ export class DeferredConflictResolver extends BusConflictResolver {
   private waiting:
     | { request: ConflictRequest; settle: (answer: ConflictAnswer) => void }
     | undefined;
+  private readonly listeners = new Set<(request: ConflictRequest | undefined) => void>();
+
+  /**
+   * Notifies whoever owns the terminal that a question is waiting, or that it
+   * has been answered elsewhere. Both views can answer the same question, so
+   * each needs to know when the other got there first.
+   */
+  onQuestion(listener: (request: ConflictRequest | undefined) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private announce(): void {
+    for (const listener of this.listeners) listener(this.waiting?.request);
+  }
 
   /** The question currently awaiting an answer, if any. */
   get pending(): ConflictRequest | undefined {
@@ -112,6 +127,7 @@ export class DeferredConflictResolver extends BusConflictResolver {
     if (!waiting) return false;
     this.waiting = undefined;
     waiting.settle(parseConflictReply(waiting.request, reply));
+    this.announce();
     return true;
   }
 
@@ -121,11 +137,13 @@ export class DeferredConflictResolver extends BusConflictResolver {
     if (!waiting) return;
     this.waiting = undefined;
     waiting.settle({ chosen: "hold", custom: false });
+    this.announce();
   }
 
   protected ask(request: ConflictRequest): Promise<ConflictAnswer> {
     return new Promise<ConflictAnswer>((settle) => {
       this.waiting = { request, settle };
+      this.announce();
     });
   }
 }

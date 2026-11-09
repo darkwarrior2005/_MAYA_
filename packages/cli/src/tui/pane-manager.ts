@@ -11,6 +11,7 @@ import {
 } from "./layout.js";
 import { openBrowser } from "./open-browser.js";
 import { OPERATOR_PANE, PaneStore, type PaneSpec } from "./pane-state.js";
+import { postConflictAnswer } from "./post-message.js";
 import { Screen } from "./screen.js";
 import { isSlashCommand, runSlashCommand } from "./slash-commands.js";
 
@@ -20,7 +21,11 @@ export interface PaneManagerOptions {
   workers: PaneSpec[];
   /** Puts what the user typed onto the bus, when the host supports it. */
   onUserMessage?: (text: string) => void;
-  /** Lets the user answer the Operator's merge questions from the prompt. */
+  /**
+   * Only for releasing a parked question when this process owns the Operator
+   * and the user quits. The prompt itself is read from the event stream and
+   * answered through the daemon, so an attached pane works the same way.
+   */
   conflicts?: DeferredConflictResolver;
   screen?: Screen;
   charset?: Charset;
@@ -183,11 +188,19 @@ export class PaneManager {
     // A pending merge question owns the prompt: answering it is the only thing
     // the Operator is waiting for, and treating "2" as a new task would lose
     // the answer and leave the merge blocked.
-    const conflicts = this.options.conflicts;
-    if (conflicts?.pending && !isSlashCommand(line)) {
+    //
+    // The answer goes through the daemon even when the Operator is in this
+    // process, so an attached pane answers the same way a browser does and
+    // there is one path to get wrong instead of two.
+    if (this.store.pendingConflict && !isSlashCommand(line)) {
       this.store.note(`you: ${line}`);
-      conflicts.answer(line);
       this.schedule();
+      void postConflictAnswer(this.options.daemonAddress, line).catch((error: unknown) => {
+        this.store.note(
+          `could not answer: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.schedule();
+      });
       return;
     }
 
@@ -246,7 +259,7 @@ export class PaneManager {
     if (!this.running) return;
     const size = this.screen.size();
     const views = this.store.views();
-    const pending = this.options.conflicts?.pending;
+    const pending = this.store.pendingConflict;
 
     const banner = pending
       ? [

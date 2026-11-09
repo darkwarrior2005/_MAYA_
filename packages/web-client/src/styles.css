@@ -464,3 +464,240 @@ p.error {
   padding: 6px 10px;
   color: var(--error);
 }
+
+/* Lower drawer: to-do, secret channel, roster, info ----------------------- */
+
+.drawer {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 0 10px 10px;
+  height: 210px;
+  flex: none;
+}
+
+@media (max-width: 900px) {
+  .drawer {
+    height: auto;
+    grid-auto-rows: minmax(160px, auto);
+  }
+}
+
+.todo,
+.roster,
+.secret-lane {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.todo li,
+.roster li,
+.secret-lane li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.todo .summary,
+.secret-lane .said,
+.roster .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 3em;
+}
+
+.todo .who,
+.roster .tool,
+.secret-lane time {
+  color: var(--muted);
+  font-size: 11px;
+  flex: none;
+}
+
+.secret-lane .said {
+  white-space: normal;
+}
+
+.secret-lane .who {
+  color: var(--warn);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  flex: none;
+}
+
+.state {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.state-running,
+.state-assigned {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.state-merged {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+}
+
+.state-blocked,
+.state-failed {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 50%, transparent);
+}
+
+.roster li.off {
+  opacity: 0.5;
+}
+
+.roster .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.roster .dot-running {
+  background: var(--accent);
+}
+
+.roster .dot-done {
+  background: var(--ok);
+}
+
+.roster .dot-error,
+.roster .dot-stalled {
+  background: var(--error);
+}
+
+.info table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.info th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text);
+  padding: 2px 10px;
+}
+
+.info td {
+  text-align: right;
+  padding: 2px 10px;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.info tbody.models th {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.info tbody.models {
+  border-top: 1px solid var(--line);
+}
+
+.info tfoot {
+  border-top: 1px solid var(--line);
+}
+
+.info tfoot td {
+  color: var(--text);
+}
+
+.info .muted {
+  padding: 4px 10px 0;
+}
+
+/* Conflict prompt --------------------------------------------------------- */
+
+.conflict {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--warn) 12%, var(--panel));
+}
+
+.conflict h3 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--warn);
+}
+
+.conflict .question {
+  margin: 0 0 8px;
+}
+
+.conflict .options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.conflict .options button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.conflict .options button:hover:enabled {
+  border-color: var(--warn);
+}
+
+.conflict .options .by {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.conflict .custom {
+  display: flex;
+  gap: 6px;
+}
+
+.conflict .custom input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+}
+
+.conflict .custom button {
+  padding: 5px 10px;
+  background: var(--warn);
+  border: 0;
+  border-radius: 6px;
+  color: #241c00;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.conflict button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

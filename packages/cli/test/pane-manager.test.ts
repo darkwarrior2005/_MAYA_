@@ -9,6 +9,8 @@ import {
   EventBus,
   EventStore,
   MayaPaths,
+  RepoManager,
+  defaultConfig,
 } from "@maya/core";
 import { PaneManager } from "../src/tui/pane-manager.js";
 import { OPERATOR_PANE } from "../src/tui/pane-state.js";
@@ -66,20 +68,41 @@ function fakeTerminal(cols = 100, rows = 30) {
   };
 }
 
-async function startDaemon() {
+async function startDaemon(options: { answerable?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), "maya-panes-"));
   const paths = new MayaPaths(root);
   paths.ensureDirs();
   const store = new EventStore(paths.dbFile);
   const bus = new EventBus(store);
-  const daemon = new Daemon({ paths, bus, store });
+  // A pane answers a merge question through the daemon, the same way a
+  // browser does, so the daemon needs the resolver for the answer to land.
+  const conflicts = options.answerable ? new DeferredConflictResolver(bus) : undefined;
+  const daemon = new Daemon({
+    paths,
+    bus,
+    store,
+    ...(conflicts
+      ? {
+          web: {
+            repoRoot: root,
+            // Through RepoManager so the CLI does not grow a direct
+            // dependency on simple-git just for a test.
+            git: new RepoManager(root).git,
+            store,
+            bus,
+            config: defaultConfig(),
+            conflicts,
+          },
+        }
+      : {}),
+  });
   await daemon.start();
 
   cleanups.push(async () => {
     await daemon.stop();
     store.close();
   });
-  return { bus, daemon };
+  return { bus, daemon, conflicts };
 }
 
 async function eventually(check: () => boolean, label: string): Promise<void> {
@@ -148,8 +171,8 @@ describe("PaneManager", () => {
   });
 
   it("answers a parked merge question from the prompt and restores the terminal on quit", async () => {
-    const { bus, daemon } = await startDaemon();
-    const conflicts = new DeferredConflictResolver(bus);
+    const { daemon, conflicts } = await startDaemon({ answerable: true });
+    if (!conflicts) throw new Error("expected a resolver");
     const terminal = fakeTerminal();
     const panes = new PaneManager({
       daemonAddress: daemon.address,

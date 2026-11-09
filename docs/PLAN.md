@@ -5,7 +5,7 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-09: **Phases 0–4 complete. Phase 5 is next.**
+Status as of 2026-11-09: **Phases 0–5 complete. Phase 6 is next.**
 
 ---
 
@@ -97,26 +97,34 @@ lands in the same log; and killing the daemon, publishing while it is down and
 restarting it leaves the open browser with both missed lines, no duplicates and
 no gap.
 
-### Phase 5 — Secret channel + full chat, roster, info panels — **next**
-`channel: "secret"` end to end (a split lane in the panes, `SecretChannel.tsx`
-in the web client), `AgentsToDo.tsx`, `AgentsRoster.tsx`, `InfoPanel.tsx`, and
-the full button-plus-custom-answer conflict UI replacing the CLI-only resolver.
+### Phase 5 — Secret channel + full chat, roster, info panels — **done**
+`core/src/orchestrator/secret-channel.ts`, `core/src/usage/token-tracker.ts`,
+`/api/usage` and `/api/conflict`, and the web client's `ConflictPrompt.tsx`
+and `Panels.tsx` (Agents To Do, Secret Channel, Agents roster, Info).
 
-Most of the data is already flowing. The bus carries `channel: "secret"` and
-the web chat already badges a secret line; `conflict_prompt` and
-`conflict_resolved` are published and rendered as text in both interfaces;
-`GET /api/tasks` returns what the To-Do panel needs; and `usage` events carry
-tokens and cost per agent. What is missing is `core/src/usage/token-tracker.ts`
-to roll usage up into `UsageTotals` for the Info Panel, a route to answer a
-conflict from the web (the CLI answers through `DeferredConflictResolver`,
-which has no HTTP route yet), and the panels themselves.
+**How the secret channel works.** A wrapped CLI has one way to say anything:
+the text it prints. So the channel is a marker in that text — a line beginning
+`@user` is lifted out and published on `channel: "secret"`, and the rest stays
+in the Operator's transcript. The briefing that tells an agent the marker is
+appended to every instruction, because an agent cannot use a channel it was
+never told about. The web shows the secret lane in its own panel and
+deliberately *not* in the main chat, which is the whole point of it.
 
-*To verify*: two workers edit the same lines; the merge is blocked, the task is
-not marked done on a dirty tree, and the same `conflict_prompt` renders in both
-interfaces; a worker posting on the secret channel reaches the user without
-passing through the Operator's main chat.
+**How a merge question is answered.** One `DeferredConflictResolver` per
+session, whatever the interface. The prompt is rendered from the event stream
+rather than from the resolver object, so an attached pane in another process
+shows the same question with the same options; both the pane and the browser
+answer it by posting to `/api/conflict`, and whichever gets there first wins —
+the other is told it was already answered.
 
-### Phase 6 — Hardening
+*Verified*: `node tools/verify/conflict.mjs` drives a real pane (the question,
+its options, who proposed them, answering with `2`, the banner clearing, the
+decision landing in the transcript); the browser answers the same question
+with a button click and the Operator's promise resolves to `discard`; a
+worker's `@user` line reaches the Secret Channel panel and never appears in
+the Operator's chat.
+
+### Phase 6 — Hardening — **next**
 Adapter plugins loaded from `.maya/config.json`, Windows and Linux packaging,
 daemon crash and re-attach.
 

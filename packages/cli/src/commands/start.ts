@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import type { Command } from "commander";
 import {
-  CliConflictResolver,
   Daemon,
   DeferredConflictResolver,
   EventBus,
@@ -18,6 +17,7 @@ import {
   isLockAlive,
   type ConflictResolver,
 } from "@maya/core";
+import { promptConflictsInTerminal } from "../terminal-conflicts.js";
 import type { OperatorRunReport } from "@maya/core";
 import { printEvent } from "../render.js";
 import { PaneManager } from "../tui/pane-manager.js";
@@ -64,6 +64,12 @@ export function registerStart(program: Command): void {
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
 
+      // One resolver whatever the interface, so a merge question can be
+      // answered from the terminal or from the browser and the first answer
+      // wins. `--yes` still means never ask.
+      const deferred = options.yes ? undefined : new DeferredConflictResolver(bus);
+      const conflicts: ConflictResolver = deferred ?? new HoldOnConflictResolver(bus);
+
       // The daemon serves the web interface on the same port, so `/localhost`
       // in the pane view has somewhere real to go.
       const clientDir = findWebClient();
@@ -79,15 +85,10 @@ export function registerStart(program: Command): void {
           bus,
           config,
           ...(clientDir ? { clientDir } : {}),
+          ...(deferred ? { conflicts: deferred } : {}),
         },
       });
       const lock = await daemon.start();
-
-      // `--yes` wins over the panes: it says never ask, so the Operator must
-      // not end up parked on a question nobody intends to answer.
-      const deferred = !options.yes && options.tui ? new DeferredConflictResolver(bus) : undefined;
-      const conflicts: ConflictResolver =
-        deferred ?? (options.yes ? new HoldOnConflictResolver(bus) : new CliConflictResolver(bus));
 
       let panes: PaneManager | undefined;
       if (options.tui) {
@@ -105,8 +106,12 @@ export function registerStart(program: Command): void {
       }
 
       // Exactly one renderer owns stdout: the log printer would scribble over
-      // the pane frame.
-      if (!panes) bus.subscribe(printEvent);
+      // the pane frame, and a readline prompt would fight it for stdin.
+      let stopPrompting: (() => void) | undefined;
+      if (!panes) {
+        bus.subscribe(printEvent);
+        if (deferred) stopPrompting = promptConflictsInTerminal(deferred);
+      }
 
       if (!panes) {
         console.log(`[maya] daemon on ${daemon.address} (pid ${lock.pid})`);
@@ -130,6 +135,7 @@ export function registerStart(program: Command): void {
 
         process.exitCode = report.held.length === 0 ? 0 : 1;
       } finally {
+        stopPrompting?.();
         panes?.stop();
         await daemon.stop();
         store.close();

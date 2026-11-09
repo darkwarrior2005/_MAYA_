@@ -18,3 +18,22 @@ export async function postMessage(daemonAddress: string, text: string): Promise<
     throw new Error(body.error ?? `daemon refused the message (${response.status})`);
   }
 }
+
+/**
+ * Answers the Operator's merge question through the daemon, for the same
+ * reason: the resolver is in the daemon's process, and a pane attached from
+ * another one has no other way to reach it. The browser may answer the same
+ * question, so a 409 here means someone got there first.
+ */
+export async function postConflictAnswer(daemonAddress: string, answer: string): Promise<void> {
+  const response = await fetch(`${daemonAddress}/api/conflict`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ answer }),
+  });
+  if (response.status === 409) throw new Error("that question was already answered");
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `daemon refused the answer (${response.status})`);
+  }
+}

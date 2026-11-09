@@ -15,6 +15,7 @@
     "lint": "eslint packages --ext .ts,.tsx",
     "verify:panes": "node tools/verify/panes.mjs",
     "verify:live": "node tools/verify/live-run.mjs",
+    "verify:conflict": "node tools/verify/conflict.mjs",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,md}\""
   },
   "devDependencies": {
