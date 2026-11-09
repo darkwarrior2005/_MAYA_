@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@maya/shared-types";
+import type { AgentEvent, TokenUsage } from "@maya/shared-types";
 import type {
   AdapterCapabilities,
   AdapterHealth,
@@ -6,19 +6,23 @@ import type {
   AgentHandle,
   AgentRunOptions,
 } from "./adapter.js";
-import { PtyAgentHandle, parseJsonLine } from "./pty-adapter.js";
+import { SubprocessAgentHandle, parseJsonLine } from "./subprocess-adapter.js";
 import { commandExists } from "./which.js";
 
 /**
- * Default tool allowlist. Copilot CLI denies or stalls on tool use in headless
- * runs unless permissions are granted explicitly, and a blanket --yolo would
- * hand an unattended agent every capability at once, so the profile is scoped
- * to what a coding worker actually needs.
+ * Permission patterns, not tool names. Copilot's rules take the form
+ * `kind(argument)` — `write(path?)`, `shell(command:*?)` — so passing an
+ * internal tool name like `apply_patch` silently grants nothing and every
+ * tool call is denied. Only writes are granted by default: a worker needs to
+ * edit files, while shell access is left for a project to opt into.
  */
-export const COPILOT_DEFAULT_ALLOWED_TOOLS = ["shell", "write", "edit", "read", "search"];
+export const COPILOT_DEFAULT_ALLOWED_TOOLS = ["write"];
 
 export interface CopilotAdapterOptions {
+  /** Permission patterns passed to --allow-tool. */
   allowedTools?: string[];
+  /** Patterns passed to --deny-tool; denials always beat allows. */
+  deniedTools?: string[];
   rawLogPath?: (agentId: string) => string;
 }
 
@@ -28,7 +32,7 @@ export class CopilotCliAdapter implements AgentAdapter {
   readonly capabilities: AdapterCapabilities = {
     streaming: true,
     structuredOutput: true,
-    resumable: false,
+    resumable: true,
   };
 
   constructor(private readonly options: CopilotAdapterOptions = {}) {}
@@ -42,15 +46,15 @@ export class CopilotCliAdapter implements AgentAdapter {
         detail: "`copilot` not on PATH — install with `npm i -g @github/copilot`",
       };
     }
-    const authenticated = Boolean(
+    const hasToken = Boolean(
       process.env["GITHUB_TOKEN"] ?? process.env["GH_TOKEN"] ?? process.env["COPILOT_TOKEN"],
     );
     return {
       installed: true,
-      authenticated,
-      detail: authenticated
+      authenticated: true,
+      detail: hasToken
         ? "using token from env"
-        : "no GITHUB_TOKEN/GH_TOKEN in env — run `copilot` once interactively to sign in",
+        : "assumes credentials from a prior `copilot login` (not verified)",
     };
   }
 
@@ -62,11 +66,13 @@ export class CopilotCliAdapter implements AgentAdapter {
       "--output-format",
       "json",
       "--no-ask-user",
-      ...allowed.flatMap((tool) => ["--allow-tool", tool]),
+      ...allowed.flatMap((pattern) => ["--allow-tool", pattern]),
+      ...(this.options.deniedTools ?? []).flatMap((pattern) => ["--deny-tool", pattern]),
     ];
     if (options.model) args.push("--model", options.model);
+    if (options.resumeSessionId) args.push("--session-id", options.resumeSessionId);
 
-    return new PtyAgentHandle(
+    return new SubprocessAgentHandle(
       options,
       { command: "copilot", args },
       {
@@ -78,61 +84,90 @@ export class CopilotCliAdapter implements AgentAdapter {
 }
 
 /**
- * Copilot's headless JSON shape is not fully specified in its docs, so anything
- * unrecognized is surfaced as plain text rather than dropped — losing agent
- * output would be worse than showing a raw line.
+ * Copilot emits a chatty JSONL stream — streaming deltas, MCP chatter and a
+ * multi-kilobyte usage checkpoint. Only the settled records are surfaced;
+ * echoing unknown lines as chat text would bury the actual answer, and the raw
+ * stream is mirrored to .maya/logs anyway for diagnosis.
  */
 export function parseCopilotLine(line: string, agentId: string): AgentEvent[] {
   const json = parseJsonLine(line);
-  if (!json) return [{ type: "text", agentId, text: line }];
+  if (!json) return [];
+  if (json["ephemeral"] === true) return [];
 
   const type = typeof json["type"] === "string" ? (json["type"] as string) : "";
+  const data = (json["data"] ?? {}) as Record<string, unknown>;
 
   switch (type) {
-    case "assistant":
-    case "message":
-    case "text": {
-      const text = typeof json["text"] === "string" ? json["text"] : stringify(json["content"]);
-      return text ? [{ type: "text", agentId, text }] : [];
+    case "assistant.message": {
+      const content = typeof data["content"] === "string" ? data["content"] : "";
+      return content.trim() ? [{ type: "text", agentId, text: content }] : [];
     }
-    case "tool_use":
-    case "tool_call": {
-      const toolName = typeof json["name"] === "string" ? json["name"] : "tool";
-      return [{ type: "tool_call", agentId, toolName, input: json["input"] }];
+
+    case "tool.execution_start": {
+      const toolName = typeof data["toolName"] === "string" ? data["toolName"] : "tool";
+      return [{ type: "tool_call", agentId, toolName, input: data["arguments"] }];
     }
-    case "error":
-      return [
-        { type: "error", agentId, message: stringify(json["message"] ?? json), fatal: false },
+
+    case "tool.execution_complete": {
+      const toolName = typeof data["toolName"] === "string" ? data["toolName"] : "tool";
+      const ok = data["success"] === true;
+      const events: AgentEvent[] = [
+        { type: "tool_result", agentId, toolName, ok, output: data["result"] },
       ];
-    case "result":
-    case "workflow.result": {
-      const events: AgentEvent[] = [];
-      const usage = readUsage(json["usage"]);
-      if (usage) events.push({ type: "usage", agentId, usage });
-      events.push({
-        type: "done",
-        agentId,
-        ok: json["is_error"] !== true && json["error"] === undefined,
-        ...(usage ? { usage } : {}),
-      });
+      const error = data["error"] as { code?: string; message?: string } | undefined;
+      if (!ok && error?.code === "denied") {
+        // Unattended runs cannot answer a prompt, so a denial is terminal and
+        // means the permission patterns are wrong — not a step the agent can
+        // retry its way out of.
+        events.push({
+          type: "error",
+          agentId,
+          message: `permission denied for ${toolName}: ${
+            error.message ?? "no allow rule matched"
+          }. Grant it with an --allow-tool pattern such as write(...) or shell(...).`,
+          fatal: true,
+        });
+      }
       return events;
     }
+
+    case "session.usage_checkpoint": {
+      const usage = readCheckpointUsage(data);
+      return usage ? [{ type: "usage", agentId, usage }] : [];
+    }
+
+    case "result": {
+      // exitCode is 0 even when every tool was denied, so a fatal error
+      // recorded earlier in the stream is what actually decides the outcome.
+      const exitCode = typeof json["exitCode"] === "number" ? json["exitCode"] : 0;
+      const sessionId = typeof json["sessionId"] === "string" ? json["sessionId"] : undefined;
+      return [
+        {
+          type: "done",
+          agentId,
+          ok: exitCode === 0,
+          ...(sessionId ? { sessionId } : {}),
+        },
+      ];
+    }
+
     default:
-      return [{ type: "text", agentId, text: line }];
+      return [];
   }
 }
 
-function readUsage(raw: unknown): { inputTokens: number; outputTokens: number } | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const usage = raw as Record<string, unknown>;
-  const input = Number(usage["input_tokens"] ?? usage["prompt_tokens"] ?? 0);
-  const output = Number(usage["output_tokens"] ?? usage["completion_tokens"] ?? 0);
-  if (!input && !output) return undefined;
-  return { inputTokens: input, outputTokens: output };
-}
+function readCheckpointUsage(data: Record<string, unknown>): TokenUsage | undefined {
+  const snapshot = data["accountingSnapshot"] as Record<string, unknown> | undefined;
+  const details = snapshot?.["tokenDetails"] as Record<string, { tokenCount?: number }> | undefined;
+  if (!details) return undefined;
 
-function stringify(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined || value === null) return "";
-  return JSON.stringify(value);
+  const usage: TokenUsage = {
+    inputTokens: details["input"]?.tokenCount ?? 0,
+    outputTokens: details["output"]?.tokenCount ?? 0,
+  };
+  const cacheRead = details["cache_read"]?.tokenCount;
+  const cacheWrite = details["cache_write"]?.tokenCount;
+  if (cacheRead !== undefined) usage.cacheReadTokens = cacheRead;
+  if (cacheWrite !== undefined) usage.cacheWriteTokens = cacheWrite;
+  return usage;
 }

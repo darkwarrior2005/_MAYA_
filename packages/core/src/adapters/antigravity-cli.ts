@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@maya/shared-types";
+import type { AgentEvent, TokenUsage } from "@maya/shared-types";
 import type {
   AdapterCapabilities,
   AdapterHealth,
@@ -6,21 +6,23 @@ import type {
   AgentHandle,
   AgentRunOptions,
 } from "./adapter.js";
-import { PtyAgentHandle, parseJsonLine } from "./pty-adapter.js";
+import { SubprocessAgentHandle, parseJsonLine } from "./subprocess-adapter.js";
 import { commandExists } from "./which.js";
 
+export type AntigravityMode = "accept-edits" | "auto" | "plan";
+
 export interface AntigravityAdapterOptions {
-  /** Allow the agent to act without per-action approval. Off by default. */
+  /**
+   * `accept-edits` lets a worker write files without a prompt nobody can
+   * answer, while stopping short of `--dangerously-skip-permissions`, which
+   * would also auto-approve shell commands.
+   */
+  mode?: AntigravityMode;
+  /** Opt in to --dangerously-skip-permissions. Off by default. */
   skipPermissions?: boolean;
   rawLogPath?: (agentId: string) => string;
 }
 
-/**
- * Antigravity's CLI (`agy`) is the newest of the three and the least settled:
- * it has a reported hang when stdout is not a TTY, which the PTY spawn is meant
- * to avoid, and its usage field names in plain -p mode are unconfirmed. Treat
- * parsing here as best-effort and lean on the raw log when it misbehaves.
- */
 export class AntigravityCliAdapter implements AgentAdapter {
   readonly id = "antigravity-cli" as const;
   readonly displayName = "Google Antigravity CLI";
@@ -49,85 +51,118 @@ export class AntigravityCliAdapter implements AgentAdapter {
   }
 
   async start(options: AgentRunOptions): Promise<AgentHandle> {
-    const args = ["-p", options.prompt, "--output-format", "stream-json"];
+    const args = ["--output-format", "stream-json", "--mode", this.options.mode ?? "accept-edits"];
     if (options.model) args.push("--model", options.model);
     if (options.resumeSessionId) args.push("--conversation", options.resumeSessionId);
     if (this.options.skipPermissions) args.push("--dangerously-skip-permissions");
+    args.push("-p", options.prompt);
 
-    return new PtyAgentHandle(
+    return new SubprocessAgentHandle(
       options,
       { command: "agy", args },
       {
-        parseLine: parseAntigravityLine,
+        parseLine: makeAntigravityParser(),
         ...(this.options.rawLogPath ? { rawLogPath: this.options.rawLogPath(options.agentId) } : {}),
       },
     );
   }
 }
 
-export function parseAntigravityLine(line: string, agentId: string): AgentEvent[] {
-  const json = parseJsonLine(line);
-  if (!json) return [{ type: "text", agentId, text: line }];
+/**
+ * Antigravity streams assistant text as many small `text_delta` chunks. They
+ * are joined per step and emitted once the step settles, so the chat log gets
+ * whole replies rather than a message per token.
+ */
+export function makeAntigravityParser(): (line: string, agentId: string) => AgentEvent[] {
+  const pending = new Map<number, string>();
 
-  const type = typeof json["type"] === "string" ? (json["type"] as string) : "";
+  return (line, agentId) => {
+    const json = parseJsonLine(line);
+    if (!json) return [];
 
-  switch (type) {
-    case "assistant":
-    case "message": {
-      const text = extractText(json);
-      return text ? [{ type: "text", agentId, text }] : [];
+    const event = typeof json["event"] === "string" ? (json["event"] as string) : "";
+
+    if (event === "init") {
+      const init = (json["init"] ?? {}) as Record<string, unknown>;
+      const model = typeof init["model"] === "string" ? init["model"] : undefined;
+      return [
+        {
+          type: "status",
+          agentId,
+          status: "running",
+          ...(model ? { detail: `model ${model}` } : {}),
+        },
+      ];
     }
-    case "tool_use": {
-      const toolName = typeof json["name"] === "string" ? json["name"] : "tool";
-      return [{ type: "tool_call", agentId, toolName, input: json["input"] }];
+
+    if (event === "step_update") {
+      const step = (json["step_update"] ?? {}) as Record<string, unknown>;
+      const stepType = typeof step["step_type"] === "string" ? step["step_type"] : "";
+      const state = typeof step["state"] === "string" ? step["state"] : "";
+      const index = typeof step["step_index"] === "number" ? step["step_index"] : -1;
+
+      if (stepType === "agent_response") {
+        const delta = typeof step["text_delta"] === "string" ? step["text_delta"] : "";
+        pending.set(index, (pending.get(index) ?? "") + delta);
+        if (state !== "DONE") return [];
+        const text = (pending.get(index) ?? "").trim();
+        pending.delete(index);
+        return text ? [{ type: "text", agentId, text }] : [];
+      }
+
+      if (stepType === "tool") {
+        const toolName = typeof step["tool_name"] === "string" ? step["tool_name"] : "tool";
+        const info = (step["tool_info"] ?? {}) as Record<string, unknown>;
+        if (state === "DONE") {
+          return [{ type: "tool_result", agentId, toolName, ok: true, output: info["result"] }];
+        }
+        return [{ type: "tool_call", agentId, toolName, input: info["parameters"] }];
+      }
+
+      return [];
     }
-    case "error":
-      return [{ type: "error", agentId, message: extractText(json) || line, fatal: false }];
-    case "result": {
+
+    if (event === "result") {
+      const result = (json["result"] ?? {}) as Record<string, unknown>;
+      const status = typeof result["status"] === "string" ? result["status"] : "";
+      const usage = readUsage(result["usage"]);
+      const conversationId =
+        typeof result["conversation_id"] === "string" ? result["conversation_id"] : undefined;
+
       const events: AgentEvent[] = [];
-      const usage = readUsage(json["usage"]);
       if (usage) events.push({ type: "usage", agentId, usage });
+      if (status !== "SUCCESS") {
+        events.push({
+          type: "error",
+          agentId,
+          message: `run finished with status ${status || "unknown"}`,
+          fatal: true,
+        });
+      }
       events.push({
         type: "done",
         agentId,
-        ok: json["is_error"] !== true,
-        ...(typeof json["conversation_id"] === "string"
-          ? { sessionId: json["conversation_id"] }
-          : {}),
+        ok: status === "SUCCESS",
+        ...(conversationId ? { sessionId: conversationId } : {}),
         ...(usage ? { usage } : {}),
       });
       return events;
     }
-    default:
-      return [{ type: "text", agentId, text: line }];
-  }
+
+    return [];
+  };
 }
 
-function extractText(json: Record<string, unknown>): string {
-  if (typeof json["text"] === "string") return json["text"];
-  const message = json["message"];
-  if (typeof message === "string") return message;
-  if (message && typeof message === "object") {
-    const content = (message as Record<string, unknown>)["content"];
-    if (Array.isArray(content)) {
-      return content
-        .map((block) =>
-          block && typeof block === "object" && typeof (block as { text?: string }).text === "string"
-            ? (block as { text: string }).text
-            : "",
-        )
-        .filter(Boolean)
-        .join("\n");
-    }
-  }
-  return "";
-}
-
-function readUsage(raw: unknown): { inputTokens: number; outputTokens: number } | undefined {
+function readUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const usage = raw as Record<string, unknown>;
-  const input = Number(usage["input_tokens"] ?? usage["prompt_tokens"] ?? 0);
-  const output = Number(usage["output_tokens"] ?? usage["completion_tokens"] ?? 0);
+  const input = Number(usage["input_tokens"] ?? 0);
+  const output = Number(usage["output_tokens"] ?? 0);
   if (!input && !output) return undefined;
-  return { inputTokens: input, outputTokens: output };
+  const cacheRead = usage["cache_read_tokens"];
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    ...(typeof cacheRead === "number" ? { cacheReadTokens: cacheRead } : {}),
+  };
 }

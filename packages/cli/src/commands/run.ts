@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
 import type { Command } from "commander";
 import {
-  ClaudeCodeAdapter,
   EventBus,
   EventStore,
   RepoManager,
   TaskRunner,
+  buildRegistry,
   loadConfig,
 } from "@maya/core";
 import type { AgentDescriptor } from "@maya/shared-types";
@@ -45,7 +45,10 @@ export function registerRun(program: Command): void {
         ...(profile.model ? { model: profile.model } : {}),
       };
 
-      const runner = new TaskRunner(repo, new ClaudeCodeAdapter(), bus);
+      // The worker profile decides the tool; resolving it through the registry
+      // is what lets `run` exercise any adapter, not just Claude Code.
+      const adapter = buildRegistry(repo.paths).get(profile.tool);
+      const runner = new TaskRunner(repo, adapter, bus);
       const instruction = taskWords.join(" ");
 
       const outcome = await runner.run({
