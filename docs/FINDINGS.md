@@ -83,6 +83,17 @@ Windows console; `MAYA_TUI_CHARSET=unicode|ascii` overrides.
 
 ## The daemon and the web interface
 
+**Binding to 127.0.0.1 is not access control.** The browser on that same
+machine is the threat. WebSockets are exempt from the same-origin policy, so
+any page the user has open can connect to a localhost daemon and read
+everything; and a cross-origin POST with a non-preflighted content type still
+*arrives*, CORS only hides the response from the sender. Measured against a
+running daemon before the check existed: a page served from another port read
+the whole event log, secret channel included, and posted a message that landed
+in it. The daemon now checks `Origin` on both paths. A request with no Origin
+is allowed, because that is the CLI or a script, which can read
+`.maya/state.db` directly anyway.
+
 **A row written to the event store from outside the daemon reaches nobody, and
 is skipped permanently.** The daemon's in-process emitter is what pushes to
 connected views, and every view resumes from the highest id *it* has rendered —

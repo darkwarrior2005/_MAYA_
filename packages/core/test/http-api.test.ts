@@ -347,3 +347,70 @@ describe("usage and merge questions over HTTP", () => {
     expect((await post("/api/conflict", { answer: "1" })).status).toBe(409);
   });
 });
+
+describe("who the daemon will talk to", () => {
+  it("refuses a request from another origin, which CORS does not stop", async () => {
+    const { daemon, store } = await serve();
+    const before = store.latestId();
+
+    // A page can send this cross-origin with no preflight. CORS hides the
+    // response from it; it does not stop the write from happening.
+    const response = await fetch(`${daemon.address}/api/message`, {
+      method: "POST",
+      headers: { "content-type": "text/plain", origin: "http://evil.example" },
+      body: JSON.stringify({ text: "posted by another site" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(store.latestId()).toBe(before);
+  });
+
+  it("refuses a socket from another origin, which no policy stops", async () => {
+    const { daemon } = await serve();
+    const { WebSocket } = await import("ws");
+
+    const outcome = await new Promise<string>((done) => {
+      const socket = new WebSocket(`${daemon.address.replace("http", "ws")}/ws?since=0`, {
+        origin: "http://evil.example",
+      });
+      socket.on("open", () => done("opened"));
+      socket.on("message", () => done("read the session"));
+      socket.on("unexpected-response", (_request, response) => done(`refused ${response.statusCode}`));
+      socket.on("error", () => done("refused"));
+      setTimeout(() => done("timed out"), 4000);
+    });
+
+    expect(outcome).toMatch(/refused/);
+  });
+
+  it("serves its own web interface", async () => {
+    const { daemon, bus } = await serve();
+    const seen: string[] = [];
+    bus.subscribe((event) => {
+      if (event.payload.type === "user_message") seen.push(event.payload.text);
+    });
+
+    const response = await fetch(`${daemon.address}/api/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: daemon.address },
+      body: JSON.stringify({ text: "from the real client" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual(["from the real client"]);
+  });
+
+  it("still serves local tools, which send no origin at all", async () => {
+    const { daemon } = await serve();
+    // The CLI, curl and scripts. They can read .maya/state.db anyway.
+    expect((await fetch(`${daemon.address}/api/session`)).status).toBe(200);
+  });
+
+  it("refuses a sandboxed or file:// page", async () => {
+    const { daemon } = await serve();
+    const response = await fetch(`${daemon.address}/api/session`, {
+      headers: { origin: "null" },
+    });
+    expect(response.status).toBe(403);
+  });
+});

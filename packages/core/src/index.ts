@@ -15,6 +15,7 @@ export * from "./config/maya-config.js";
 export * from "./daemon/client-assets.js";
 export * from "./daemon/file-watcher.js";
 export * from "./daemon/http-api.js";
+export * from "./daemon/origin.js";
 export * from "./daemon/recovery.js";
 export * from "./daemon/server.js";
 export * from "./git/branch-manager.js";

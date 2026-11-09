@@ -20,7 +20,7 @@ All six phases of `docs/PLAN.md` are built. What is left is listed under
 ```bash
 pnpm install          # pnpm 12; node >= 20 (developed on 25)
 pnpm build            # tsc -b across the workspace
-pnpm test             # vitest, 87 tests
+pnpm test             # vitest
 pnpm lint             # eslint
 pnpm package          # bundle the CLI into dist/maya
 ```

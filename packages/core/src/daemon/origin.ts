@@ -1,0 +1,44 @@
+/**
+ * Who is allowed to talk to the daemon.
+ *
+ * Binding to 127.0.0.1 keeps other machines out; it does nothing about the
+ * browser already running on this one. A page on any origin can open a
+ * WebSocket to localhost — sockets are not subject to the same-origin policy,
+ * so the server has to check — and can send a form-shaped POST cross-origin
+ * without a preflight, where CORS hides the *response* but not the effect.
+ *
+ * Measured against a running daemon before this existed: a page served from
+ * another port read the whole event log, secret channel included, and posted
+ * a chat message that landed in the log.
+ *
+ * A request with no `Origin` at all is allowed. That is the CLI, a script or
+ * curl — all of which can already read `.maya/state.db` directly, so refusing
+ * them would protect nothing. Browsers always send it on the requests that
+ * matter here.
+ */
+export function isAllowedOrigin(origin: string | undefined, port: number): boolean {
+  if (origin === undefined || origin === "") return true;
+  // What a sandboxed iframe, a data: document or a file:// page sends.
+  if (origin === "null") return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  if (parsed.port !== String(port)) return false;
+  return LOOPBACK.has(parsed.hostname.toLowerCase());
+}
+
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** The 403 body, so the refusal explains itself rather than looking like a bug. */
+export function originRefusal(origin: string): { error: string } {
+  return {
+    error:
+      `refused a request from ${origin}: this daemon only answers its own ` +
+      "web interface and local tools",
+  };
+}

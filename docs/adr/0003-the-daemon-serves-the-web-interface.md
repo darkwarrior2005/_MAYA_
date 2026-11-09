@@ -62,5 +62,10 @@ long editing session look like session history.
   library, because all it needs is "something changed". That works on Windows
   and macOS, and on Linux from Node 20.13; where it is unavailable the daemon
   says so on the bus and the tree is stale rather than broken.
+- **Loopback is not a permission.** Serving on 127.0.0.1 keeps other machines
+  out and does nothing about the browser on this one, which was verified the
+  hard way: before the daemon checked `Origin`, a page on another port read
+  the entire session over the WebSocket and wrote to `/api/message`. Both
+  paths now check it; see `daemon/origin.ts`.
 - If the HTTP surface grows much past this — auth, sessions, uploads, many
   routes — the handler should become a framework rather than grow a router.
