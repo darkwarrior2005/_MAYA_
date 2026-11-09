@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { Command } from "commander";
 import { MayaPaths, isLockAlive, loadConfig, readLock } from "@maya/core";
 import { PaneManager } from "../tui/pane-manager.js";
+import { postMessage } from "../tui/post-message.js";
 import { paneSpecs } from "../tui/specs.js";
 
 interface AttachOptions {
@@ -31,9 +32,19 @@ export function registerAttach(program: Command): void {
       }
 
       const config = loadConfig(paths);
-      const panes = new PaneManager({
-        daemonAddress: `http://127.0.0.1:${lock.port}`,
+      const daemonAddress = `http://127.0.0.1:${lock.port}`;
+      const panes: PaneManager = new PaneManager({
+        daemonAddress,
         ...paneSpecs(config),
+        // Through the daemon, not this process's own store: the daemon owns
+        // the bus, and a row written from here would reach no one.
+        onUserMessage: (text) => {
+          void postMessage(daemonAddress, text).catch((error: unknown) =>
+            panes.announce(
+              `could not send: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+        },
       });
 
       if (!panes.interactive) {
@@ -42,10 +53,10 @@ export function registerAttach(program: Command): void {
         return;
       }
 
-      // Attaching is a view onto someone else's run: it replays the whole
-      // session from the event log, but it does not own the Operator, so it
-      // cannot answer merge questions or hand out new tasks.
-      panes.announce("attached read-only — the session's own terminal answers questions");
+      // Attaching is a view onto someone else's run: it can say something on
+      // the session's chat, but it does not own the Operator, so merge
+      // questions are answered in the terminal that started the run.
+      panes.announce("attached — the session's own terminal answers merge questions");
       await panes.start();
     });
 }

@@ -1,10 +1,12 @@
 import { createServer, type Server } from "node:http";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { BusEvent } from "@maya/shared-types";
+import type { BusEvent, ServerMessage, ServerSignal } from "@maya/shared-types";
 import type { EventBus } from "../bus/event-bus.js";
 import type { EventStore } from "../bus/event-store.js";
 import type { MayaPaths } from "../config/maya-config.js";
+import { FileWatcher } from "./file-watcher.js";
+import { createApiHandler, type WebApiDeps } from "./http-api.js";
 
 export interface DaemonLock {
   pid: number;
@@ -17,6 +19,12 @@ export interface DaemonOptions {
   bus: EventBus;
   store: EventStore;
   port?: number;
+  /**
+   * Serves the HTTP API and the built web client on the same port as the
+   * WebSocket. Omitted, the daemon answers only a status probe, which is all
+   * `maya run` needs.
+   */
+  web?: WebApiDeps;
 }
 
 /**
@@ -27,6 +35,7 @@ export interface DaemonOptions {
 export class Daemon {
   private http: Server | undefined;
   private wss: WebSocketServer | undefined;
+  private files: FileWatcher | undefined;
   private port = 0;
 
   constructor(private readonly options: DaemonOptions) {}
@@ -36,7 +45,12 @@ export class Daemon {
   }
 
   async start(): Promise<DaemonLock> {
-    const http = createServer((_req, res) => {
+    const api = this.options.web ? createApiHandler(this.options.web) : undefined;
+    const http = createServer((req, res) => {
+      if (api) {
+        void api(req, res);
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ service: "maya", port: this.port }));
     });
@@ -53,6 +67,24 @@ export class Daemon {
     const wss = new WebSocketServer({ server: http, path: "/ws" });
     wss.on("connection", (socket, request) => this.onConnection(socket, request.url ?? "/ws"));
     this.wss = wss;
+
+    const web = this.options.web;
+    if (web) {
+      this.files = new FileWatcher({
+        repoRoot: web.repoRoot,
+        onChange: () => this.signal("files_changed"),
+        onUnsupported: (reason) =>
+          // The tree will be stale until the client refreshes it, which is
+          // worth saying out loud rather than looking like a hung view.
+          web.bus.publish("system", null, "error", {
+            type: "error",
+            agentId: "maya",
+            message: `watching the repository is unavailable here (${reason}); the file tree will not update on its own`,
+            fatal: false,
+          }),
+      });
+      this.files.start();
+    }
 
     const lock: DaemonLock = {
       pid: process.pid,
@@ -71,9 +103,7 @@ export class Daemon {
   private onConnection(socket: WebSocket, url: string): void {
     const lastSeen = Number(new URL(url, "http://localhost").searchParams.get("since") ?? 0);
 
-    const send = (event: BusEvent): void => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(event));
-    };
+    const send = (event: BusEvent): void => deliver(socket, { kind: "event", event });
 
     const unsubscribe = this.options.bus.replayAndSubscribe(
       Number.isFinite(lastSeen) ? lastSeen : 0,
@@ -82,6 +112,11 @@ export class Daemon {
 
     socket.on("close", unsubscribe);
     socket.on("error", unsubscribe);
+  }
+
+  /** Tells every connected view that something outside the event log changed. */
+  private signal(signal: ServerSignal): void {
+    this.wss?.clients.forEach((client) => deliver(client, { kind: "signal", signal }));
   }
 
   /**
@@ -95,6 +130,8 @@ export class Daemon {
   }
 
   async stop(): Promise<void> {
+    this.files?.stop();
+    this.files = undefined;
     this.wss?.clients.forEach((client) => client.terminate());
     await new Promise<void>((resolve) => {
       if (!this.wss) return resolve();
@@ -106,6 +143,10 @@ export class Daemon {
     });
     clearLock(this.options.paths);
   }
+}
+
+function deliver(socket: WebSocket, message: ServerMessage): void {
+  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
 }
 
 export function readLock(paths: MayaPaths): DaemonLock | null {

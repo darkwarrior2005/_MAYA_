@@ -12,7 +12,8 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-Phases 0–3 are done; Phase 4 (web server and read-only UI) is next.
+Phases 0–4 are done; Phase 5 (secret channel, conflict UI, roster and info
+panels) is next.
 
 ## Commands
 
@@ -29,7 +30,12 @@ node packages/cli/dist/main.js doctor -d <dir>         # per-tool install/auth
 node packages/cli/dist/main.js run "<task>" -d <dir>   # one agent, one branch
 node packages/cli/dist/main.js start --tui "<task>" -d <dir>
 node packages/cli/dist/main.js attach -d <dir>         # panes on a live session
+node packages/cli/dist/main.js web -d <dir>           # web interface, opens a browser
 ```
+
+The web client is a Vite app; `pnpm build` builds it and the daemon serves it.
+For hot reload, run a daemon with `maya web`, then
+`MAYA_PORT=<its port> pnpm --filter @maya/web-client dev`.
 
 Verification that cannot be a unit test lives in `tools/verify/` and needs the
 optional `node-pty`:
@@ -48,17 +54,18 @@ node tools/verify/live-run.mjs   # a real agent run; costs money
 | `packages/core/src/orchestrator` | `Operator` (dispatch and merge), `TaskQueue`, conflict resolvers, `TaskRunner` (the single-task chain). |
 | `packages/core/src/git` | Repo, branch, worktree and merge services over `simple-git`. |
 | `packages/core/src/bus` | Append-only SQLite event log and the in-process bus. |
-| `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, writes `.maya/daemon.lock`. |
+| `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, the HTTP API and the built web client on one port, watches the repository, writes `.maya/daemon.lock`. |
 | `packages/core/src/persistence` | Paired `.md`/`.html` context snapshots. |
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
+| `packages/web-client` | React + Vite: git tree, repository browser, chat. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
 
 Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 `daemon.lock`, `agents/<id>/*.md|.html`, `logs/<id>.ndjson`.
 
 ## Invariants
 
-Breaking one of these is a correctness bug, not a style question. Most are here
+Eleven rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
 1. **The Operator alone merges.** A stalled or failed worker's branch is never
@@ -73,14 +80,22 @@ because they were broken once already.
    The CLI and the web client are WebSocket clients of the daemon, and both
    replay from their last-seen event id on connect, so a dropped socket cannot
    leave a view silently stale.
-6. **Agent text is untrusted** for rendering: strip escape sequences before it
+6. **Only the daemon's process writes to the bus.** Another process can open
+   the same SQLite file, but the daemon's emitter is what notifies views, and
+   clients resume from their own high-water mark — so a row written from
+   outside is skipped permanently, not caught up later. Anything else that
+   needs to say something posts to `/api/message`.
+7. **Durable events and transient signals stay apart.** An event is a row in
+   the log, replayable by id. A signal (`files_changed`) says only "re-read
+   it" and is never stored.
+8. **Agent text is untrusted** for rendering: strip escape sequences before it
    is drawn.
-7. **Every line the layout emits is exactly `cols` wide and contains no escape
+9. **Every line the layout emits is exactly `cols` wide and contains no escape
    sequences**, so a line's length is its visible width.
-8. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
-   `.gitignore`.
-9. **Context snapshots are written temp-then-rename with retries**, and a failed
-   snapshot logs and skips rather than crashing the daemon.
+10. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
+    `.gitignore`.
+11. **Context snapshots are written temp-then-rename with retries**, and a
+    failed snapshot logs and skips rather than crashing the daemon.
 
 ## Conventions
 

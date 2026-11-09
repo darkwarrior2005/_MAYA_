@@ -12,6 +12,7 @@ import {
   TaskQueue,
   buildRegistry,
   enabledWorkers,
+  findWebClient,
   loadConfig,
   readLock,
   isLockAlive,
@@ -63,11 +64,22 @@ export function registerStart(program: Command): void {
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
 
+      // The daemon serves the web interface on the same port, so `/localhost`
+      // in the pane view has somewhere real to go.
+      const clientDir = findWebClient();
       const daemon = new Daemon({
         paths: repo.paths,
         bus,
         store,
         ...(options.port ? { port: Number(options.port) } : {}),
+        web: {
+          repoRoot,
+          git: repo.git,
+          store,
+          bus,
+          config,
+          ...(clientDir ? { clientDir } : {}),
+        },
       });
       const lock = await daemon.start();
 

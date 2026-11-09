@@ -81,6 +81,36 @@ lines and a shorter frame does not cover the rows the old one occupied.
 characters arrive as mojibake. `pickCharset()` draws ASCII on an unannounced
 Windows console; `MAYA_TUI_CHARSET=unicode|ascii` overrides.
 
+## The daemon and the web interface
+
+**A row written to the event store from outside the daemon reaches nobody, and
+is skipped permanently.** The daemon's in-process emitter is what pushes to
+connected views, and every view resumes from the highest id *it* has rendered —
+so an out-of-band insert is passed over on the next reconnect rather than
+caught up. Observed with an open browser: the row landed in SQLite and never
+appeared. Anything outside the daemon posts to `/api/message` instead.
+
+**Vite does not typecheck.** `vite build` happily ships a type error, so
+`@maya/web-client`'s build runs `tsc --noEmit` first. It is not a composite
+project: tsc only checks there, and Vite emits.
+
+**The web client must not import `@maya/core`.** Core pulls better-sqlite3 and
+simple-git. Types that cross the wire — `FileNode`, `RepoTree`, `SessionInfo`,
+`ServerMessage` — live in `@maya/shared-types`, which is types only.
+
+**`git ls-files --cached --others --exclude-standard -z` is the file tree.**
+It is "tracked, plus untracked that is not ignored" in one call, so .gitignore
+is honoured without reimplementing it. `-z` matters: a path may contain
+anything but NUL, and git quotes and escapes paths otherwise.
+
+**`git log --graph` implies `--topo-order`.** Matching it means passing
+`--topo-order` explicitly; the default order interleaves branches by date and
+the lanes come out unreadable.
+
+**The state dir makes the tree look dirty** unless `excludeStateDirFromGit` has
+run. `maya init` does it; a test that calls only `paths.ensureDirs()` will see
+`clean: false` and the reason is `.maya/` itself.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

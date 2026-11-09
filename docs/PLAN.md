@@ -5,7 +5,7 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-09: **Phases 0–3 complete. Phase 4 is next.**
+Status as of 2026-11-09: **Phases 0–4 complete. Phase 5 is next.**
 
 ---
 
@@ -77,33 +77,39 @@ panes, replay, keys, slash commands, escape-code stripping, resize in both
 directions, terminal restored) and `node tools/verify/live-run.mjs` (11 checks
 driving a real Claude Code run through the panes).
 
-### Phase 4 — Web server + read-only UI — **next**
-`packages/web-server` (Fastify, `@fastify/static`, `ws` on the same HTTP server)
-and `packages/web-client` (React + Vite), three columns: Git Tree, repository
-browser (chokidar-driven live FS tree), and chat reading the same bus stream the
-panes show. Conflict resolution stays CLI-only in this phase.
+### Phase 4 — Web server + read-only UI — **done**
+`core/src/git/graph-builder.ts` (commit DAG with lanes assigned server-side)
+and `file-tree.ts` (the repository as git sees it); `core/src/daemon/http-api.ts`
+and `file-watcher.ts`; `packages/web-client` (React + Vite): Git Tree with a
+status box, repository browser, and chat, all reading the one event log.
+`maya web` serves it, `maya start --tui` serves it on the same port, and
+`/localhost` opens it.
 
-Needs `core/git/graph-builder.ts`, which is **not written yet**: compute the
-commit DAG from `git log --all --parents` and assign lanes server-side, so the
-client only draws. Do not reach for `@gitgraph/js`; it has weak adoption.
+The daemon serves the API, the client and the WebSocket on one port, without a
+web framework — see `docs/adr/0003`. Transient signals were split from durable
+events in the same decision.
 
-The daemon currently serves one JSON status route and `/ws`. `/localhost`
-already opens the daemon's address, so pointing the web app at that same port
-is what turns the existing slash command into a real destination.
+*Verified* against a seeded repository with two task branches and a merge: the
+git tree matches `git log --graph --topo-order` commit for commit and lane for
+lane; a file written on disk appears in the browser with no reload; a line
+typed in an attached pane appears in the web chat and one sent from the browser
+lands in the same log; and killing the daemon, publishing while it is down and
+restarting it leaves the open browser with both missed lines, no duplicates and
+no gap.
 
-*To verify*: the Git Tree matches `git log --graph` for the same repo; the
-browser reflects live file changes; a message typed in the CLI appears in the
-web chat and vice versa; killing and reopening the web client replays missed
-events from the last-seen id with no gap and no duplicates.
-
-### Phase 5 — Secret channel + full chat, roster, info panels
+### Phase 5 — Secret channel + full chat, roster, info panels — **next**
 `channel: "secret"` end to end (a split lane in the panes, `SecretChannel.tsx`
 in the web client), `AgentsToDo.tsx`, `AgentsRoster.tsx`, `InfoPanel.tsx`, and
 the full button-plus-custom-answer conflict UI replacing the CLI-only resolver.
 
-The bus, the payload types (`ChatChannel`, `conflict_prompt`), the task queue
-and the per-agent usage totals all exist already; this phase is mostly UI over
-data that is already flowing.
+Most of the data is already flowing. The bus carries `channel: "secret"` and
+the web chat already badges a secret line; `conflict_prompt` and
+`conflict_resolved` are published and rendered as text in both interfaces;
+`GET /api/tasks` returns what the To-Do panel needs; and `usage` events carry
+tokens and cost per agent. What is missing is `core/src/usage/token-tracker.ts`
+to roll usage up into `UsageTotals` for the Info Panel, a route to answer a
+conflict from the web (the CLI answers through `DeferredConflictResolver`,
+which has no HTTP route yet), and the panels themselves.
 
 *To verify*: two workers edit the same lines; the merge is blocked, the task is
 not marked done on a dirty tree, and the same `conflict_prompt` renders in both

@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import type { BusEvent } from "@maya/shared-types";
+import type { BusEvent, ServerMessage } from "@maya/shared-types";
 
 export interface BusClientOptions {
   /** Base daemon address, e.g. http://127.0.0.1:51234. */
@@ -55,7 +55,10 @@ export class BusClient {
 
     socket.on("message", (data) => {
       try {
-        this.options.onEvent(JSON.parse(String(data)) as BusEvent);
+        const message = JSON.parse(String(data)) as ServerMessage;
+        // Signals say something outside the event log changed. The panes show
+        // the log, so there is nothing here to redraw for one.
+        if (message.kind === "event") this.options.onEvent(message.event);
       } catch {
         // A frame we cannot parse is a daemon-side bug, not a reason to tear
         // down a working view; the raw logs are where it gets diagnosed.

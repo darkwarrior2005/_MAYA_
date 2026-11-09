@@ -134,3 +134,41 @@ export interface UsageTotals {
   byModel: Record<string, TokenUsage>;
   total: TokenUsage;
 }
+
+export interface FileNode {
+  name: string;
+  /** Repo-relative, forward-slashed, so a client can use it as a key. */
+  path: string;
+  type: "file" | "dir";
+  children?: FileNode[];
+}
+
+export interface RepoTree {
+  root: FileNode;
+  fileCount: number;
+}
+
+/** The session summary the web client opens with. */
+export interface SessionInfo {
+  repoRoot: string;
+  branch: string;
+  clean: boolean | null;
+  changedFiles: number | null;
+  operator: { id: string; displayName: string; tool: AgentToolId };
+  workers: Array<{ id: string; displayName: string; tool: AgentToolId; enabled: boolean }>;
+  latestEventId: EventId;
+}
+
+/**
+ * What the daemon sends over its WebSocket.
+ *
+ * Durable history and transient signals are kept apart on purpose. An event is
+ * a row in the append-only log, replayable by id; a signal says only "something
+ * changed, re-read it" and is never stored. Writing a row every time a file is
+ * saved would bloat the session log with things no one will ever replay.
+ */
+export type ServerMessage =
+  | { kind: "event"; event: BusEvent }
+  | { kind: "signal"; signal: ServerSignal };
+
+export type ServerSignal = "files_changed";

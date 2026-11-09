@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
-import type { BusEvent } from "@maya/shared-types";
+import type { BusEvent, ServerMessage } from "@maya/shared-types";
 import { EventBus } from "../src/bus/event-bus.js";
 import { EventStore } from "../src/bus/event-store.js";
 import { MayaPaths } from "../src/config/maya-config.js";
@@ -42,7 +42,9 @@ function collect(url: string, until: number): Promise<BusEvent[]> {
     }, 5000);
 
     socket.on("message", (raw) => {
-      seen.push(JSON.parse(String(raw)) as BusEvent);
+      const message = JSON.parse(String(raw)) as ServerMessage;
+      if (message.kind !== "event") return;
+      seen.push(message.event);
       if (seen.length >= until) {
         clearTimeout(timer);
         socket.close();
