@@ -31,17 +31,26 @@ interface StartOptions {
   port?: string;
   yes?: boolean;
   tui?: boolean;
+  plan?: boolean;
 }
 
 export function registerStart(program: Command): void {
   program
     .command("start")
     .description("Run tasks across workers in parallel, with the Operator merging results")
-    .argument("<tasks...>", "one or more tasks, each handed to its own worker")
+    .argument(
+      "<tasks...>",
+      "one or more tasks, each handed to its own worker — or, with --plan, one request to split",
+    )
     .option("-d, --dir <dir>", "project directory", ".")
     .option("-p, --port <port>", "port for the local daemon")
     .option("-y, --yes", "never prompt on conflicts; hold the branch instead", false)
     .option("-t, --tui", "watch the run in tmux-style panes instead of a scrolling log", false)
+    .option(
+      "--plan",
+      "let the Operator split one request into tasks, and confirm the split first",
+      false,
+    )
     .action(async (tasks: string[], options: StartOptions) => {
       const repoRoot = resolve(options.dir);
       const repo = new RepoManager(repoRoot);
@@ -51,6 +60,35 @@ export function registerStart(program: Command): void {
       if (existing && isLockAlive(existing)) {
         console.error(
           `a Maya daemon is already running for this project (pid ${existing.pid}, port ${existing.port})`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      // A plan decides how many agent runs happen and what each is told, so
+      // it is confirmed before anything starts. Unattended, there is nobody to
+      // confirm it, and fanning out six runs off an unreviewed split is not a
+      // reasonable default.
+      // Nobody to ask: a piped or redirected stdin has no one behind it, and
+      // the readline prompt would wait on input that never comes. Found by
+      // hanging on exactly that.
+      if (options.plan && !options.tui && process.stdin.isTTY !== true) {
+        console.error(
+          [
+            "--plan asks you to confirm the split, which needs a terminal.",
+            "Run it from an interactive shell, add --tui, or pass the tasks yourself.",
+          ].join("\n"),
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      if (options.plan && options.yes) {
+        console.error(
+          [
+            "--plan needs someone to confirm the split, so it cannot be combined with --yes.",
+            "Run it without --yes, or pass the tasks yourself.",
+          ].join("\n"),
         );
         process.exitCode = 1;
         return;
@@ -177,7 +215,9 @@ export function registerStart(program: Command): void {
           // instead of restating the task.
           operator: config.operator,
         });
-        return operator.run(tasks);
+        // `--plan` means the arguments are one request to split, not a list
+        // of tasks already split.
+        return options.plan ? operator.planAndRun(tasks.join(" ")) : operator.run(tasks);
       }
     });
 }

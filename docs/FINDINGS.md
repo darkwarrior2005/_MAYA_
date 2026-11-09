@@ -143,6 +143,21 @@ the lanes come out unreadable.
 run. `maya init` does it; a test that calls only `paths.ensureDirs()` will see
 `clean: false` and the reason is `.maya/` itself.
 
+**`status.isClean()` counts untracked files.** Using it to decide whether a
+merge is safe means refusing to merge in any repository where someone has a
+scratch file — most of them. Worse, the same check after a successful merge
+aborted it. Only changes a merge could destroy should block one; git refuses
+the single case an untracked file is at risk, with a clear error.
+
+**A summary cannot be read from the branch before the commit exists.**
+`git diff base...branch` runs before `commitAll`, so it was always empty and
+every generated summary silently fell back to restating the task. Stage
+first, read `diff --cached --stat`, then commit.
+
+**A readline prompt on a non-TTY stdin waits forever.** `maya start --plan`
+piped from `printf` hung with no output at all. Anything that must be
+answered now refuses up front when there is nobody to answer it.
+
 **An agent can only use a channel it was told about.** The secret channel is
 a marker (`@user` at the start of a line) in the agent's own output, because a
 wrapped CLI has no other way to say anything. `withSecretChannel()` appends the

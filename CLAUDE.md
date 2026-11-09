@@ -46,6 +46,7 @@ node tools/verify/panes.mjs      # 23 checks in a real pseudoconsole
 node tools/verify/conflict.mjs   # a merge question in a pane, answered
 node tools/verify/column-width.mjs  # width.ts against a real terminal
 node tools/verify/mcp.mjs        # the MCP server over stdio, against a daemon
+node tools/verify/planning.mjs   # the Operator splitting a request, in a terminal
 node tools/verify/live-run.mjs   # a real agent run; costs money
 node tools/verify/packaged.mjs   # the bundle, driven from an unrelated cwd
 ```
@@ -65,7 +66,7 @@ names — see `docs/adr/0004`.
 | --- | --- |
 | `packages/shared-types` | `AgentEvent`, `BusEvent`, `ChatPayload`, `TaskSpec`, `GitNode`, `TokenUsage`. No logic. |
 | `packages/core/src/adapters` | One `AgentAdapter` per wrapped CLI, normalising to `AgentEvent`. Plus the stall watchdog and PATH resolution. |
-| `packages/core/src/orchestrator` | `Operator` (dispatch and merge), `TaskQueue`, conflict resolvers, `TaskRunner` (the single-task chain). |
+| `packages/core/src/orchestrator` | `Operator` (plan, dispatch, merge), `Planner` and `SummaryGenerator` (the two places it runs its own adapter), `TaskQueue`, conflict resolvers, `TaskRunner` (the single-task chain). |
 | `packages/core/src/git` | Repo, branch, worktree and merge services over `simple-git`. |
 | `packages/core/src/bus` | Append-only SQLite event log and the in-process bus. |
 | `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, the HTTP API and the built web client on one port, watches the repository, writes `.maya/daemon.lock`. |
@@ -82,55 +83,58 @@ Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 
 ## Invariants
 
-Sixteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
+Seventeen rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
-1. **The Operator alone merges.** A stalled or failed worker's branch is never
+1. **A merge is blocked only by changes it could destroy**, never by an
+   untracked file. `status.isClean()` counts those, and refusing on them
+   meant refusing to work in most real repositories.
+2. **The Operator alone merges.** A stalled or failed worker's branch is never
    merged, and a blocked merge becomes a question for the user — never a forced
    merge and never a task marked done on a dirty tree.
-2. **A tool's reported success is not success.** A recorded fatal error
+3. **A tool's reported success is not success.** A recorded fatal error
    overrides it, and so does a stall. See `subprocess-adapter.ts`.
-3. **Pipe transport stays the default** for subprocess adapters. A PTY corrupts
+4. **Pipe transport stays the default** for subprocess adapters. A PTY corrupts
    the long JSON lines these tools emit, and the corruption looks like success.
-4. **No bypass-permission flags by default**, for any tool.
-5. **Everything an agent does goes through the bus** before it reaches a screen.
+5. **No bypass-permission flags by default**, for any tool.
+6. **Everything an agent does goes through the bus** before it reaches a screen.
    The CLI and the web client are WebSocket clients of the daemon, and both
    replay from their last-seen event id on connect, so a dropped socket cannot
    leave a view silently stale.
-6. **Only the daemon's process writes to the bus.** Another process can open
+7. **Only the daemon's process writes to the bus.** Another process can open
    the same SQLite file, but the daemon's emitter is what notifies views, and
    clients resume from their own high-water mark — so a row written from
    outside is skipped permanently, not caught up later. Anything else that
    needs to say something posts to `/api/message`.
-7. **A merge question is answered through the daemon**, by the pane and the
+8. **A merge question is answered through the daemon**, by the pane and the
    browser alike, and rendered from the event stream rather than from the
    resolver — otherwise a view in another process can show the question but
    not answer it.
-8. **Durable events and transient signals stay apart.** An event is a row in
+9. **Durable events and transient signals stay apart.** An event is a row in
    the log, replayable by id. A signal (`files_changed`) says only "re-read
    it" and is never stored.
-9. **The daemon checks `Origin`.** Loopback is not access control: a page on
+10. **The daemon checks `Origin`.** Loopback is not access control: a page on
     any other origin can open a WebSocket to localhost and read everything,
     and can POST cross-origin where CORS hides only the response. Both were
     demonstrated against a running daemon before `daemon/origin.ts` existed.
-10. **Agent text is untrusted** for rendering: strip escape sequences before
+11. **Agent text is untrusted** for rendering: strip escape sequences before
     it is drawn.
-11. **Every line the layout emits is exactly `cols` columns wide and contains
+12. **Every line the layout emits is exactly `cols` columns wide and contains
     no escape sequences.** Columns, not characters: measure with
     `displayWidth`, never `.length`. Where a terminal's rules are unknown,
     err wide — a gap is harmless, a wrap scrolls the screen.
-12. **A run is bounded three ways**, not one: silence, wall clock and tokens.
+13. **A run is bounded three ways**, not one: silence, wall clock and tokens.
     Silence alone misses the opposite failure — a denied or looping agent
     keeps talking, so the stall timer is re-armed forever while the run
     spends.
-13. **One worker runs one task at a time.** Workers run in parallel, but a
+14. **One worker runs one task at a time.** Workers run in parallel, but a
     worker with several tasks works through them in order: concurrent runs of
     one agent share a log file, a pane and a context snapshot.
-14. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
+15. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
     `.gitignore`.
-15. **Context snapshots are written temp-then-rename with retries**, and a
+16. **Context snapshots are written temp-then-rename with retries**, and a
     failed snapshot logs and skips rather than crashing the daemon.
-16. **Recovery never deletes a worktree.** A daemon that crashed mid-run
+17. **Recovery never deletes a worktree.** A daemon that crashed mid-run
     leaves uncommitted agent work in one; recovery reports it and prunes only
     metadata for directories that are already gone.
 

@@ -17,6 +17,8 @@
     "verify:live": "node tools/verify/live-run.mjs",
     "verify:conflict": "node tools/verify/conflict.mjs",
     "verify:width": "node tools/verify/column-width.mjs",
+    "verify:mcp": "node tools/verify/mcp.mjs",
+    "verify:planning": "node tools/verify/planning.mjs",
     "package": "node tools/package.mjs",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,md}\""
   },

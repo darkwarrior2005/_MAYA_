@@ -7,11 +7,23 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status: 170 tests, lint clean, six verification harnesses passing, on Windows.
+Status: 182 tests, lint clean, seven verification harnesses passing, on Windows.
 
-**Update.** B1, B2, D1–D3 and A3 are now fixed, and an MCP server plus two
-agent skills have been added. What is left is marked **OPEN** below; the
+**Update.** A1, A3, B1, B2 and D1–D3 are now fixed, and an MCP server plus
+two agent skills have been added. What is left is marked **OPEN** below; the
 fixed entries are kept for the reasoning, with what was done.
+
+Building A1 turned up two more defects, both now fixed and both invisible to
+the unit tests because they only appear in a real repository:
+
+- **Merging was refused whenever the working tree held an untracked file.**
+  `status.isClean()` counts those, so Maya declined to merge in most real
+  repositories — and the post-merge check aborted successful merges for the
+  same reason. Only changes a merge could actually destroy block it now;
+  git itself refuses the one case an untracked file is at risk.
+- **Every generated summary silently fell back.** It diffed `base...branch`
+  before the commit existed, so the diff was always empty and the summary was
+  always the task text. The change is now read from the staged diff.
 
 ---
 
@@ -31,7 +43,7 @@ a guess.
 
 ## A. The Operator does not think
 
-### A1 — The Operator still cannot split a request — **OPEN**
+### A1 — The Operator can now split a request — **FIXED**
 
 **Evidence.** Grepping every use of `config.operator` finds it in `doctor.ts`
 (health check), `init.ts` (printing), `run.ts` (a fallback worker profile),
@@ -288,13 +300,24 @@ genuine interactive session appears; the design note already records it.
 
 ---
 
-## What A1 still needs
+## How A1 landed
 
-A3 built `SummaryGenerator`, which is the first thing that runs the Operator's
-own adapter — so the pattern for A1 exists now: resolve the operator profile
-through the registry, run one bounded turn, parse a typed result, fall back
-when anything goes wrong. A1 is the same shape with a task list instead of a
-commit message, plus the confirmation step before dispatch.
+`orchestrator/planner.ts` runs the Operator's own adapter over one request and
+parses a `TASK:` list, capped at six. `Operator.planAndRun` puts the split to
+the person as the same question type a blocked merge uses — so it renders in
+the panes and in the browser with no new machinery — and runs what they chose:
+the plan, the request whole, or their own words.
+
+Everything degrades to today's behaviour: no operator configured, a tool that
+is unavailable, an unparseable answer, or a model echoing the template back
+all fall back to one task carrying the request verbatim.
+
+`--plan` refuses up front when there is nobody to confirm — with `--yes`, or
+with a non-interactive stdin. The second guard exists because the first live
+run hung forever on a piped stdin waiting for an answer that could never come.
+
+Verified by `node tools/verify/planning.mjs`, which drives
+`maya start --plan` in a real pseudoconsole and answers it three ways.
 
 ## Suggested order
 

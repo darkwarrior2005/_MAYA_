@@ -26,6 +26,7 @@ export * from "./git/repo-manager.js";
 export * from "./git/worktree-manager.js";
 export * from "./orchestrator/conflict-resolver.js";
 export * from "./orchestrator/operator.js";
+export * from "./orchestrator/planner.js";
 export * from "./orchestrator/secret-channel.js";
 export * from "./orchestrator/summary-generator.js";
 export * from "./orchestrator/task-queue.js";

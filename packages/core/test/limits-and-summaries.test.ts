@@ -15,6 +15,12 @@ import { EventBus } from "../src/bus/event-bus.js";
 import { EventStore } from "../src/bus/event-store.js";
 import { publishAgentEvent } from "../src/orchestrator/secret-channel.js";
 import { SummaryGenerator, parseSummary } from "../src/orchestrator/summary-generator.js";
+import {
+  MAX_PLANNED_TASKS,
+  Planner,
+  describePlan,
+  parsePlan,
+} from "../src/orchestrator/planner.js";
 import { UsageTracker, aggregateUsage } from "../src/usage/token-tracker.js";
 import { TaskRunner } from "../src/orchestrator/task-runner.js";
 import { RepoManager } from "../src/git/repo-manager.js";
@@ -193,8 +199,7 @@ describe("summaries", () => {
   const request = {
     instruction: "add a parser",
     transcript: "Wrote src/parser.ts",
-    branch: "maya/t1/worker-a",
-    base: "main",
+    diff: " src/parser.ts | 12 ++++++++++++",
   };
 
   /** An operator that answers with whatever it is told to. */
@@ -264,8 +269,7 @@ describe("summaries", () => {
   });
 
   it("falls back to the task text when the operator cannot answer", async () => {
-    const repo = await repoWithChange();
-    const summaries = new SummaryGenerator({ adapter: operatorSaying(null), profile }, repo.git);
+    const summaries = new SummaryGenerator({ adapter: operatorSaying(null), profile });
 
     const summary = await summaries.describe(request);
     // A summary is worth having, never worth failing a finished run over.
@@ -274,17 +278,11 @@ describe("summaries", () => {
   });
 
   it("falls back when no operator is configured at all", async () => {
-    const repo = await repoWithChange();
-    const summary = await new SummaryGenerator(undefined, repo.git).describe(request);
+    const summary = await new SummaryGenerator(undefined).describe(request);
     expect(summary.generated).toBe(false);
   });
 
   it("does not spend a model call when nothing changed", async () => {
-    const dir = await makeTempRepo();
-    onCleanup(() => safeRemove(dir));
-    const repo = new RepoManager(dir);
-    await repo.openOrInit();
-
     let started = 0;
     const counting = operatorSaying("SUBJECT: should not be asked");
     const adapter: AgentAdapter = {
@@ -295,9 +293,9 @@ describe("summaries", () => {
       },
     };
 
-    const summary = await new SummaryGenerator({ adapter, profile }, repo.git).describe({
+    const summary = await new SummaryGenerator({ adapter, profile }).describe({
       ...request,
-      branch: "main",
+      diff: "",
     });
     expect(started).toBe(0);
     expect(summary.generated).toBe(false);
@@ -362,5 +360,107 @@ describe("UsageTracker", () => {
       event("a", { type: "usage", agentId: "a", usage: { inputTokens: 80, outputTokens: 4 } }, 2),
     );
     expect(tracker.totals().total.inputTokens).toBe(80);
+  });
+});
+
+describe("planning", () => {
+  const profile = {
+    id: "operator",
+    tool: "claude-code" as const,
+    displayName: "Operator",
+    stallTimeoutSec: 5,
+    enabled: true,
+  };
+
+  function operatorSaying(answer: string | null): AgentAdapter {
+    return {
+      id: "claude-code",
+      displayName: "Operator",
+      capabilities: { streaming: true, structuredOutput: false, resumable: false },
+      async check(): Promise<AdapterHealth> {
+        return { installed: true, authenticated: true };
+      },
+      async start(options: AgentRunOptions): Promise<AgentHandle> {
+        const listeners = new Set<AgentEventListener>();
+        return {
+          agentId: options.agentId,
+          onEvent(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+          waitForCompletion: async () => {
+            if (answer === null) return { ok: false, stalled: false, error: "unavailable" };
+            for (const listener of listeners) {
+              listener({ type: "text", agentId: options.agentId, text: answer });
+            }
+            return { ok: true, stalled: false };
+          },
+          interrupt: async () => {},
+          kill: async () => {},
+        };
+      },
+    };
+  }
+
+  it("splits a request into tasks", async () => {
+    const planner = new Planner({ adapter: operatorSaying(
+      "TASK: Add a CSV parser in src/parser.ts\nTASK: Add the docs page\nNOTE: They touch different files.",
+    ), profile });
+
+    const plan = await planner.plan("add CSV support and document it");
+    expect(plan.tasks).toEqual(["Add a CSV parser in src/parser.ts", "Add the docs page"]);
+    expect(plan.note).toBe("They touch different files.");
+    expect(plan.generated).toBe(true);
+  });
+
+  it("accepts a single task as a real answer", async () => {
+    const planner = new Planner({ adapter: operatorSaying("TASK: Rename the field everywhere\nNOTE: NONE"), profile });
+    const plan = await planner.plan("rename the field");
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.generated).toBe(true);
+    expect(plan.note).toBeUndefined();
+  });
+
+  it("falls back to the request when the operator cannot answer", async () => {
+    const plan = await new Planner({ adapter: operatorSaying(null), profile }).plan("do the thing");
+    expect(plan).toEqual({ tasks: ["do the thing"], generated: false });
+  });
+
+  it("falls back when no operator is configured", async () => {
+    const plan = await new Planner(undefined).plan("do the thing");
+    expect(plan.generated).toBe(false);
+  });
+});
+
+describe("parsePlan", () => {
+  it("refuses an answer with no tasks in it, so the caller falls back", () => {
+    expect(parsePlan("Sure! I think you should split this up a bit.")).toBeNull();
+    expect(parsePlan("")).toBeNull();
+  });
+
+  it("ignores the template echoed back", () => {
+    // A model that repeats the placeholder has not planned anything.
+    expect(parsePlan("TASK: <a complete instruction>\nTASK: <the next one>")).toBeNull();
+  });
+
+  it("caps the split rather than refusing it", () => {
+    const many = Array.from({ length: 12 }, (_u, i) => `TASK: job ${i}`).join("\n");
+    const plan = parsePlan(many);
+    // Every task is an agent run with its own cost, worktree and merge.
+    expect(plan?.tasks).toHaveLength(MAX_PLANNED_TASKS);
+    expect(plan?.tasks[0]).toBe("job 0");
+  });
+});
+
+describe("describePlan", () => {
+  it("puts the split in front of the person before anything runs", () => {
+    const text = describePlan("add CSV support", {
+      tasks: ["Add the parser", "Add the docs"],
+      generated: true,
+      note: "Different files.",
+    });
+    expect(text).toContain("splits into 2 tasks");
+    expect(text).toContain("1. Add the parser");
+    expect(text).toContain("Different files.");
   });
 });

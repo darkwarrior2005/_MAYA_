@@ -1,4 +1,3 @@
-import type { SimpleGit } from "simple-git";
 import type { AgentAdapter } from "../adapters/adapter.js";
 import { withRunLimits } from "../adapters/watchdog.js";
 import type { WorkerProfile } from "../config/maya-config.js";
@@ -8,9 +7,15 @@ export interface SummaryRequest {
   instruction: string;
   /** What it said while doing it, secret lines already removed. */
   transcript: string;
-  /** The branch holding the work, and what to compare it against. */
-  branch: string;
-  base: string;
+  /**
+   * The change itself, as `git diff --stat`.
+   *
+   * Passed in rather than read from the branch: this runs before the commit,
+   * so the branch holds nothing yet. Computing it here from `base...branch`
+   * silently returned an empty diff every time, and every summary quietly
+   * fell back to restating the task.
+   */
+  diff: string;
 }
 
 export interface Summary {
@@ -42,7 +47,6 @@ const SUBJECT_LIMIT = 72;
 export class SummaryGenerator {
   constructor(
     private readonly operator: { adapter: AgentAdapter; profile: WorkerProfile } | undefined,
-    private readonly git: SimpleGit,
   ) {}
 
   async describe(request: SummaryRequest): Promise<Summary> {
@@ -53,25 +57,16 @@ export class SummaryGenerator {
     };
     if (!this.operator) return fallback;
 
-    const diff = await this.diffStat(request.branch, request.base);
     // Nothing changed: there is nothing to describe that the instruction does
     // not already say, and no reason to spend a model call finding that out.
-    if (!diff.trim()) return fallback;
+    if (!request.diff.trim()) return fallback;
 
     try {
-      const answer = await this.ask(buildPrompt(request, diff));
+      const answer = await this.ask(buildPrompt(request));
       const parsed = parseSummary(answer);
       return parsed ?? fallback;
     } catch {
       return fallback;
-    }
-  }
-
-  private async diffStat(branch: string, base: string): Promise<string> {
-    try {
-      return await this.git.raw(["diff", "--stat", `${base}...${branch}`]);
-    } catch {
-      return "";
     }
   }
 
@@ -101,7 +96,7 @@ export class SummaryGenerator {
   }
 }
 
-function buildPrompt(request: SummaryRequest, diff: string): string {
+function buildPrompt(request: SummaryRequest): string {
   return [
     "Summarise what was changed, for a git commit message.",
     "",
@@ -109,7 +104,7 @@ function buildPrompt(request: SummaryRequest, diff: string): string {
     request.instruction,
     "",
     "Files changed:",
-    diff.trim(),
+    request.diff.trim(),
     "",
     "What the agent reported:",
     request.transcript.slice(0, 4000) || "(nothing)",

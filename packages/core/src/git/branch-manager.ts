@@ -31,9 +31,34 @@ export class BranchManager {
 
   /** Commits whatever the worker left in the tree. Returns null if nothing changed. */
   async commitAll(message: string): Promise<string | null> {
+    if (!(await this.stageAll())) return null;
+    return this.commitStaged(message);
+  }
+
+  /**
+   * Stages everything the worker left, and says whether there was anything.
+   *
+   * Separate from committing because the commit message is written from the
+   * diff: describing the change needs the change staged, and nothing is on
+   * the branch until the commit happens.
+   */
+  async stageAll(): Promise<boolean> {
     const status = await this.git.status();
-    if (status.isClean()) return null;
+    if (status.isClean()) return false;
     await this.git.add(["-A"]);
+    return true;
+  }
+
+  /** What is staged, as `--stat`, for whoever is writing the message. */
+  async stagedDiffStat(): Promise<string> {
+    try {
+      return await this.git.raw(["diff", "--cached", "--stat"]);
+    } catch {
+      return "";
+    }
+  }
+
+  async commitStaged(message: string): Promise<string | null> {
     const result = await this.git.commit(message);
     return result.commit || null;
   }

@@ -59,8 +59,11 @@ export interface StubBehavior {
   events?: AgentEvent[];
   /**
    * Files the agent writes into the repo, as path -> contents.
-   * `{agent}` in the contents is replaced with the agent id, so two workers
-   * can be made to write genuinely different text to the same path.
+   *
+   * `{agent}` is replaced with the agent id in both the path and the
+   * contents: in the contents so two workers write genuinely different text
+   * to one path and the merge really conflicts, and in the path so a test
+   * that wants them not to conflict can say so.
    */
   writes?: Record<string, string>;
   ok?: boolean;
@@ -97,7 +100,7 @@ export class StubAdapter implements AgentAdapter {
           for (const listener of listeners) listener(event);
         }
         for (const [relative, contents] of Object.entries(behavior.writes ?? {})) {
-          const target = joinPath(options.cwd, relative);
+          const target = joinPath(options.cwd, relative.replaceAll("{agent}", options.agentId));
           mkdirSync(dirname(target), { recursive: true });
           writeFileSync(target, contents.replaceAll("{agent}", options.agentId), "utf8");
         }

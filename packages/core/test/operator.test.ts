@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import { afterEach, describe, expect, it } from "vitest";
+import type { AgentEvent } from "@maya/shared-types";
 import type {
   AdapterHealth,
   AgentAdapter,
@@ -14,7 +15,12 @@ import { EventStore } from "../src/bus/event-store.js";
 import type { WorkerProfile } from "../src/config/maya-config.js";
 import { RepoManager } from "../src/git/repo-manager.js";
 import { Operator } from "../src/orchestrator/operator.js";
-import { HoldOnConflictResolver } from "../src/orchestrator/conflict-resolver.js";
+import {
+  BusConflictResolver,
+  HoldOnConflictResolver,
+  type ConflictAnswer,
+  type ConflictRequest,
+} from "../src/orchestrator/conflict-resolver.js";
 import { TaskQueue } from "../src/orchestrator/task-queue.js";
 import { makeTempRepo, onCleanup, runCleanups, safeRemove, StubAdapter } from "./helpers.js";
 
@@ -229,5 +235,145 @@ describe("Operator scheduling", () => {
       "beta",
       "gamma",
     ]);
+  });
+});
+
+describe("Operator planning", () => {
+  /**
+   * An operator adapter that answers with a fixed plan. It takes a tool id of
+   * its own so the registry can hold it alongside the worker stub, which is
+   * registered as "claude-code".
+   */
+  function planningAdapter(answer: string): AgentAdapter {
+    return {
+      id: "copilot-cli",
+      displayName: "Operator",
+      capabilities: { streaming: true, structuredOutput: false, resumable: false },
+      async check(): Promise<AdapterHealth> {
+        return { installed: true, authenticated: true };
+      },
+      async start(options: AgentRunOptions): Promise<AgentHandle> {
+        const listeners = new Set<(event: AgentEvent) => void>();
+        return {
+          agentId: options.agentId,
+          onEvent(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+          waitForCompletion: async () => {
+            for (const listener of listeners) {
+              listener({ type: "text", agentId: options.agentId, text: answer });
+            }
+            return { ok: true, stalled: false };
+          },
+          interrupt: async () => {},
+          kill: async () => {},
+        };
+      },
+    };
+  }
+
+  /** Answers the Operator's question with whatever the test chose. */
+  class ChoosingResolver extends BusConflictResolver {
+    asked: string[] = [];
+    constructor(bus: EventBus, private readonly reply: ConflictAnswer) {
+      super(bus);
+    }
+    protected async ask(request: ConflictRequest): Promise<ConflictAnswer> {
+      this.asked.push(request.question);
+      return this.reply;
+    }
+  }
+
+  async function planningSetup(answer: ConflictAnswer, plan: string) {
+    const dir = await makeTempRepo();
+    const repo = new RepoManager(dir);
+    await repo.openOrInit();
+    const store = new EventStore(repo.paths.dbFile);
+    onCleanup(() => store.close());
+    onCleanup(() => safeRemove(dir));
+    const bus = new EventBus(store);
+    const conflicts = new ChoosingResolver(bus, answer);
+
+    // The worker writes a file per task so each one commits something.
+    const worker = new StubAdapter({ writes: { "notes-{agent}.txt": "done {agent}\n" } });
+    // Both in one registry: the workers resolve "claude-code" and the
+    // Operator resolves its own tool to do the planning.
+    const registry = new AdapterRegistry().register(worker).register(planningAdapter(plan));
+
+    const operator = new Operator({
+      repo,
+      registry,
+      bus,
+      queue: new TaskQueue(store.database),
+      conflicts,
+      workers: [profile("worker-a"), profile("worker-b")],
+      operator: profile("operator", { tool: "copilot-cli" }),
+    });
+    return { operator, conflicts, registry, repo, store };
+  }
+
+  it("asks before running a split, and runs what was agreed", async () => {
+    const { operator, conflicts } = await planningSetup(
+      { chosen: "accept", custom: false },
+      "TASK: write the parser\nTASK: write the docs\nNOTE: different files",
+    );
+
+    const report = await operator.planAndRun("add CSV support and document it");
+
+    // The plan was put to the person, with both tasks in it.
+    expect(conflicts.asked).toHaveLength(1);
+    expect(conflicts.asked[0]).toContain("write the parser");
+    expect(conflicts.asked[0]).toContain("write the docs");
+    expect(report.outcomes.map((o) => o.task.instruction)).toEqual([
+      "write the parser",
+      "write the docs",
+    ]);
+  });
+
+  it("runs the request whole when that is what was chosen", async () => {
+    const { operator } = await planningSetup(
+      { chosen: "single", custom: false },
+      "TASK: write the parser\nTASK: write the docs",
+    );
+
+    const report = await operator.planAndRun("add CSV support and document it");
+    expect(report.outcomes).toHaveLength(1);
+    expect(report.outcomes[0]?.task.instruction).toBe("add CSV support and document it");
+  });
+
+  it("takes the person's own words over the plan", async () => {
+    const { operator } = await planningSetup(
+      { chosen: "just update the README", custom: true },
+      "TASK: write the parser\nTASK: write the docs",
+    );
+
+    const report = await operator.planAndRun("add CSV support");
+    expect(report.outcomes.map((o) => o.task.instruction)).toEqual(["just update the README"]);
+  });
+
+  it("does not ask when there was no plan to agree to", async () => {
+    const dir = await makeTempRepo();
+    const repo = new RepoManager(dir);
+    await repo.openOrInit();
+    const store = new EventStore(repo.paths.dbFile);
+    onCleanup(() => store.close());
+    onCleanup(() => safeRemove(dir));
+    const bus = new EventBus(store);
+    const conflicts = new ChoosingResolver(bus, { chosen: "accept", custom: false });
+
+    // No operator profile, so nothing can plan.
+    const operator = new Operator({
+      repo,
+      registry: new AdapterRegistry().register(new StubAdapter({ writes: { "a.txt": "x" } })),
+      bus,
+      queue: new TaskQueue(store.database),
+      conflicts,
+      workers: [profile("worker-a")],
+    });
+
+    const report = await operator.planAndRun("do the thing");
+    expect(conflicts.asked).toHaveLength(0);
+    expect(report.outcomes.map((o) => o.task.instruction)).toEqual(["do the thing"]);
   });
 });

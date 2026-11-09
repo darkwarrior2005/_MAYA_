@@ -12,6 +12,7 @@ import { WorktreeManager } from "../git/worktree-manager.js";
 import { ContextWriter } from "../persistence/context-writer.js";
 import type { ConflictResolver } from "./conflict-resolver.js";
 import { publishAgentEvent } from "./secret-channel.js";
+import { Planner, describePlan, type Plan } from "./planner.js";
 import { SummaryGenerator } from "./summary-generator.js";
 import type { TaskQueue } from "./task-queue.js";
 import { withSecretChannel } from "./task-runner.js";
@@ -59,6 +60,7 @@ export class Operator {
   private readonly merges: MergeService;
   private readonly contextWriter: ContextWriter;
   private readonly summaries: SummaryGenerator;
+  private readonly planner: Planner;
 
   constructor(private readonly deps: OperatorDeps) {
     this.worktrees = new WorktreeManager(deps.repo.git, deps.repo.paths);
@@ -73,12 +75,52 @@ export class Operator {
       }),
     );
     const operator = deps.operator;
-    this.summaries = new SummaryGenerator(
+    const thinking =
       operator && deps.registry.has(operator.tool)
         ? { adapter: deps.registry.get(operator.tool), profile: operator }
-        : undefined,
-      deps.repo.git,
-    );
+        : undefined;
+    this.summaries = new SummaryGenerator(thinking);
+    this.planner = new Planner(thinking);
+  }
+
+  /**
+   * Splits one request into tasks, puts the split to the person, then runs
+   * whatever they settled on.
+   *
+   * The confirmation is not ceremony. A plan decides how many agent runs
+   * happen and what each one is told, and a bad split costs money and leaves
+   * branches that conflict. It goes out as the same question type the
+   * Operator already uses for a blocked merge, so it renders in the panes and
+   * in the browser with no new machinery.
+   */
+  async planAndRun(request: string): Promise<OperatorRunReport> {
+    const plan = await this.planner.plan(request);
+    return this.run(await this.confirm(request, plan));
+  }
+
+  private async confirm(request: string, plan: Plan): Promise<string[]> {
+    // Nothing was planned, so there is nothing to agree to.
+    if (!plan.generated) return plan.tasks;
+
+    const answer = await this.deps.conflicts.resolve({
+      question: describePlan(request, plan),
+      options: [
+        {
+          id: "accept",
+          label: `Run ${plan.tasks.length} task${plan.tasks.length === 1 ? "" : "s"} as planned`,
+        },
+        { id: "single", label: "Run the whole request as one task instead" },
+      ],
+      allowCustom: true,
+    });
+
+    if (answer.custom) {
+      // Their own words replace the request entirely, as one task. Re-planning
+      // from them would put another question in front of someone who has just
+      // told Maya what they want.
+      return [answer.chosen];
+    }
+    return answer.chosen === "single" ? [request] : plan.tasks;
   }
 
   async run(instructions: string[]): Promise<OperatorRunReport> {
@@ -240,16 +282,21 @@ export class Operator {
     let committed: string | null = null;
     let summary = task.summary;
     if (result.ok) {
-      const described = await this.summaries.describe({
-        instruction: task.instruction,
-        transcript: transcript.join("\n"),
-        branch: worktree.branch,
-        base,
-      });
-      summary = described.subject;
-      committed = await new BranchManager(simpleGit(worktree.path)).commitAll(
-        commitMessage(described.subject, described.body, task.id, agent.displayName),
-      );
+      // Staged first, then described, then committed: the branch holds
+      // nothing until the commit, so the staged diff is the only place the
+      // change can be read from.
+      const branchManager = new BranchManager(simpleGit(worktree.path));
+      if (await branchManager.stageAll()) {
+        const described = await this.summaries.describe({
+          instruction: task.instruction,
+          transcript: transcript.join("\n"),
+          diff: await branchManager.stagedDiffStat(),
+        });
+        summary = described.subject;
+        committed = await branchManager.commitStaged(
+          commitMessage(described.subject, described.body, task.id, agent.displayName),
+        );
+      }
     }
 
     this.deps.bus.publish("main", profile.id, "task_completed", {
