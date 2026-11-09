@@ -12,8 +12,8 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-Phases 0–5 are done; Phase 6 (adapter plugins, packaging, daemon re-attach)
-is next.
+All six phases of `docs/PLAN.md` are built. What is left is listed under
+"Still open" there — chiefly that **nothing has been run on Linux**.
 
 ## Commands
 
@@ -22,6 +22,7 @@ pnpm install          # pnpm 12; node >= 20 (developed on 25)
 pnpm build            # tsc -b across the workspace
 pnpm test             # vitest, 87 tests
 pnpm lint             # eslint
+pnpm package          # bundle the CLI into dist/maya
 ```
 
 ```bash
@@ -44,7 +45,12 @@ optional `node-pty`:
 node tools/verify/panes.mjs      # 23 checks in a real pseudoconsole
 node tools/verify/conflict.mjs   # a merge question in a pane, answered
 node tools/verify/live-run.mjs   # a real agent run; costs money
+node tools/verify/packaged.mjs   # the bundle, driven from an unrelated cwd
 ```
+
+A project can add its own adapter by naming a module in `.maya/config.json`;
+`docs/adapter-plugin-example.mjs` is a working one. That list runs the code it
+names — see `docs/adr/0004`.
 
 ## Layout
 
@@ -58,6 +64,7 @@ node tools/verify/live-run.mjs   # a real agent run; costs money
 | `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, the HTTP API and the built web client on one port, watches the repository, writes `.maya/daemon.lock`. |
 | `packages/core/src/persistence` | Paired `.md`/`.html` context snapshots. |
 | `packages/core/src/usage` | Rolls the event log up into per-agent and per-model totals. |
+| `tools/` | `package.mjs` bundles the CLI; `verify/` holds the checks that cannot be unit tests. |
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
 | `packages/web-client` | React + Vite: git tree, repository browser, chat. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
@@ -67,7 +74,7 @@ Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 
 ## Invariants
 
-Twelve rules. Breaking one of these is a correctness bug, not a style question. Most are here
+Thirteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
 1. **The Operator alone merges.** A stalled or failed worker's branch is never
@@ -102,6 +109,9 @@ because they were broken once already.
     `.gitignore`.
 12. **Context snapshots are written temp-then-rename with retries**, and a
     failed snapshot logs and skips rather than crashing the daemon.
+13. **Recovery never deletes a worktree.** A daemon that crashed mid-run
+    leaves uncommitted agent work in one; recovery reports it and prunes only
+    metadata for directories that are already gone.
 
 ## Conventions
 

@@ -9,10 +9,12 @@ import {
   Operator,
   RepoManager,
   TaskQueue,
-  buildRegistry,
+  describeRecovery,
   enabledWorkers,
   findWebClient,
   loadConfig,
+  loadRegistry,
+  recoverSession,
   readLock,
   isLockAlive,
   type ConflictResolver,
@@ -63,6 +65,16 @@ export function registerStart(program: Command): void {
 
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
+
+      // Whatever the last daemon left behind, before anything of this session
+      // is running and could be confused with it.
+      const recovery = await recoverSession({ paths: repo.paths, git: repo.git, store });
+      const recoveryNotes = describeRecovery(recovery);
+
+      const { registry, problems } = await loadRegistry(repo.paths, config, (message) =>
+        recoveryNotes.push(message),
+      );
+      recoveryNotes.push(...problems);
 
       // One resolver whatever the interface, so a merge question can be
       // answered from the terminal or from the browser and the first answer
@@ -118,6 +130,11 @@ export function registerStart(program: Command): void {
         console.log(`[maya] ${workers.length} worker(s): ${workers.map((w) => w.id).join(", ")}`);
       }
 
+      for (const note of recoveryNotes) {
+        if (panes) panes.announce(note);
+        else console.log(`[maya] ${note}`);
+      }
+
       const closed = panes ? panes.start() : Promise.resolve();
 
       try {
@@ -144,7 +161,7 @@ export function registerStart(program: Command): void {
       function operatorRun(): Promise<OperatorRunReport> {
         const operator = new Operator({
           repo,
-          registry: buildRegistry(repo.paths),
+          registry,
           bus,
           queue: new TaskQueue(store.database),
           conflicts,

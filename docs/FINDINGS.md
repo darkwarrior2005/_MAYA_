@@ -122,6 +122,23 @@ another process has the events but not the object, so deriving the prompt from
 `conflict_prompt` minus a matching `conflict_resolved` is what lets every view
 show it — and posting the answer is what lets every view answer it.
 
+**A plugin's adapter id must match the config's.** Worker profiles resolve
+adapters by that name, so an adapter that registers itself as something else
+would be loaded and then never found. The loader refuses the mismatch and says
+both names.
+
+**The Agent SDK does not export its `package.json`.** Anything that locates
+packages by resolving `<name>/package.json` fails on it; walk up from what
+`require.resolve(name)` returns instead. This bit the packaging harness.
+
+**Three things cannot be bundled**: better-sqlite3 and node-pty load native
+binaries, and the Agent SDK resolves files relative to its own package
+directory. `tools/package.mjs` keeps them external and names them in the
+generated manifest.
+
+**An ESM bundle needs `require`, `__filename` and `__dirname` shimmed.** `ws`
+and simple-git reach for them; esbuild's `banner` supplies them.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

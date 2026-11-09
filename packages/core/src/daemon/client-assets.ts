@@ -17,6 +17,8 @@ export function findWebClient(env: NodeJS.ProcessEnv = process.env): string | un
     "../../../web-client/dist/",
     // Packaged: the client copied in beside the compiled core.
     "../web-client/",
+    // Bundled to a single file, with the client in a folder next to it.
+    "./web-client/",
   ]) {
     const path = fileURLToPath(new URL(candidate, import.meta.url));
     if (existsSync(path)) return path;

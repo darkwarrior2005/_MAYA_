@@ -5,10 +5,12 @@ import {
   EventBus,
   EventStore,
   RepoManager,
+  describeRecovery,
   findWebClient,
   isLockAlive,
   loadConfig,
   readLock,
+  recoverSession,
 } from "@maya/core";
 import { openBrowser } from "../tui/open-browser.js";
 
@@ -44,6 +46,13 @@ export function registerWeb(program: Command): void {
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
       const clientDir = findWebClient();
+
+      // Any daemon starts by tidying up after one that did not stop cleanly.
+      for (const note of describeRecovery(
+        await recoverSession({ paths: repo.paths, git: repo.git, store }),
+      )) {
+        console.log(`[maya] ${note}`);
+      }
 
       const daemon = new Daemon({
         paths: repo.paths,

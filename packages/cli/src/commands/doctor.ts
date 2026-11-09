@@ -1,12 +1,13 @@
-import { resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { Command } from "commander";
 import {
   EventStore,
   MayaPaths,
   RepoManager,
-  buildRegistry,
   isLockAlive,
   loadConfig,
+  loadRegistry,
   readLock,
 } from "@maya/core";
 
@@ -49,12 +50,29 @@ export function registerDoctor(program: Command): void {
       else warn(`stale daemon lock for pid ${lock.pid} — it will be replaced on next start`);
 
       const config = loadConfig(paths);
+
+      const { registry, problems } = await loadRegistry(paths, config, (message) =>
+        console.log(`ok    ${message}`),
+      );
+      for (const problem of problems) fail(problem);
+      if ((config.adapters ?? []).length === 0) {
+        console.log("ok    no adapter plugins configured");
+      }
+
+      const worktreeRoot = join(paths.stateDir, "worktrees");
+      if (existsSync(worktreeRoot) && readdirSync(worktreeRoot).length > 0) {
+        warn(
+          `worktrees remain under .maya/worktrees (${readdirSync(worktreeRoot).join(", ")}) — ` +
+            "a previous run did not finish; they may hold uncommitted work",
+        );
+      }
+
       const enabledTools = new Set(
         config.workers.filter((w) => w.enabled).map((w) => w.tool),
       );
       enabledTools.add(config.operator.tool);
 
-      for (const adapter of buildRegistry(paths).all()) {
+      for (const adapter of registry.all()) {
         const health = await adapter.check();
         const required = enabledTools.has(adapter.id);
         const label = `${adapter.displayName}${required ? "" : " (not enabled)"}`;

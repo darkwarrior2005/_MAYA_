@@ -24,10 +24,27 @@ export interface WorkerProfile {
   enabled: boolean;
 }
 
+/**
+ * An adapter a project adds itself. `module` is imported and the export is
+ * called to build the adapter, so this list is as trusted as the repository.
+ * See `adapters/plugin-loader.ts`.
+ */
+export interface AdapterPlugin {
+  /** The id worker profiles refer to in `tool`. */
+  id: string;
+  /** A package name, or a path relative to the project root. */
+  module: string;
+  /** Named export to call. The default export otherwise. */
+  export?: string;
+  options?: Record<string, unknown>;
+}
+
 export interface MayaConfig {
   version: 1;
   operator: WorkerProfile;
   workers: WorkerProfile[];
+  /** Absent by default: adding one means running the code it names. */
+  adapters?: AdapterPlugin[];
 }
 
 export const DEFAULT_STALL_TIMEOUT_SEC = 60;

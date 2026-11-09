@@ -5,7 +5,8 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-09: **Phases 0–5 complete. Phase 6 is next.**
+Status as of 2026-11-09: **Phases 0–6 complete.** The plan is built.
+What is left is in "Still open" at the end.
 
 ---
 
@@ -124,11 +125,45 @@ with a button click and the Operator's promise resolves to `discard`; a
 worker's `@user` line reaches the Secret Channel panel and never appears in
 the Operator's chat.
 
-### Phase 6 — Hardening — **next**
-Adapter plugins loaded from `.maya/config.json`, Windows and Linux packaging,
-daemon crash and re-attach.
+### Phase 6 — Hardening — **done**
+`core/src/adapters/plugin-loader.ts` and `loadRegistry()`;
+`core/src/daemon/recovery.ts`; `tools/package.mjs`.
 
----
+**Adapter plugins.** A project names a module in `.maya/config.json` and Maya
+imports it, so a tool can be added without changing Maya. See
+`docs/adapter-plugin-example.mjs` for a working one, and `docs/adr/0004` for
+the trust model — in short, the `adapters` list is as trusted as the
+repository it sits in, it is empty by default, and every module path is
+printed as it loads.
+
+**Recovery.** Every daemon start clears a lock whose process is gone, moves
+tasks a dead process left `running` to `blocked`, and prunes git's metadata
+for worktrees that are already gone. A worktree still on disk is reported and
+never deleted: that is exactly where a crash leaves uncommitted work.
+
+**Packaging.** `pnpm package` bundles the CLI with esbuild into `dist/maya`,
+with the web client beside it and a manifest naming only the dependencies that
+cannot be inlined.
+
+*Verified*: `node tools/verify/packaged.mjs` (12 checks — the bundle copied to
+a temp directory with only its declared dependencies, driven from an unrelated
+cwd: `--help`, `init`, `doctor` loading the native sqlite module, and `web`
+serving the packaged client); a daemon killed mid-flight, after which the next
+start cleared the lock and moved the orphaned task to blocked; and a project
+plugin loaded by `maya doctor` and used by `maya run` to take a task through
+branch, commit and merge.
+
+## Still open
+
+- **Linux is unverified.** Everything was built and run on Windows. Run the
+  suite and `tools/verify/packaged.mjs` on Linux before calling Maya
+  cross-platform. `fs.watch` recursive needs Node 20.13 there, and node-pty
+  has no Linux prebuild (it is optional for that reason).
+- **The `@user` marker is untested with a live agent.** The plumbing is
+  tested, but whether a model reaches for it when it should is a prompting
+  question. Watch it on the next live run.
+- **Antigravity's tool-failure shape** is still inferred; no failing sample
+  has turned up.
 
 ## Deferred, deliberately
 

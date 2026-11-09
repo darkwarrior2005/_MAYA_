@@ -2,7 +2,15 @@ export type AgentId = string;
 export type TaskId = string;
 export type EventId = number;
 
-export type AgentToolId = "claude-code" | "copilot-cli" | "antigravity-cli";
+/** The tools Maya ships with. */
+export type BuiltInToolId = "claude-code" | "copilot-cli" | "antigravity-cli";
+
+/**
+ * Any tool id, including one a project added itself. The intersection with an
+ * empty object keeps the built-in ids as completions without closing the type
+ * to the plugins named in `.maya/config.json`.
+ */
+export type AgentToolId = BuiltInToolId | (string & {});
 
 export type AgentRole = "operator" | "sub-operator" | "worker";
 

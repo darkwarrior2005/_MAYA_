@@ -5,8 +5,8 @@ import {
   EventStore,
   RepoManager,
   TaskRunner,
-  buildRegistry,
   loadConfig,
+  loadRegistry,
 } from "@maya/core";
 import type { AgentDescriptor } from "@maya/shared-types";
 import { printEvent } from "../render.js";
@@ -46,8 +46,13 @@ export function registerRun(program: Command): void {
       };
 
       // The worker profile decides the tool; resolving it through the registry
-      // is what lets `run` exercise any adapter, not just Claude Code.
-      const adapter = buildRegistry(repo.paths).get(profile.tool);
+      // is what lets `run` exercise any adapter, including one the project
+      // added itself.
+      const { registry, problems } = await loadRegistry(repo.paths, config, (message) =>
+        console.log(`[maya] ${message}`),
+      );
+      for (const problem of problems) console.error(`[maya] ${problem}`);
+      const adapter = registry.get(profile.tool);
       const runner = new TaskRunner(repo, adapter, bus);
       const instruction = taskWords.join(" ");
 
