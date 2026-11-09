@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { registerAttach } from "./commands/attach.js";
 import { registerInit } from "./commands/init.js";
 import { registerRun } from "./commands/run.js";
 import { registerStart } from "./commands/start.js";
@@ -15,6 +16,7 @@ program
 registerInit(program);
 registerRun(program);
 registerStart(program);
+registerAttach(program);
 registerDoctor(program);
 
 program.parseAsync(process.argv).catch((error: unknown) => {

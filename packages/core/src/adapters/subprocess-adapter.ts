@@ -171,7 +171,12 @@ export class SubprocessAgentHandle implements AgentHandle {
     options: AgentRunOptions,
     env: Record<string, string>,
   ): Promise<AgentRunResult> {
-    const { spawn } = await import("node-pty");
+    // node-pty is optional: it needs a native build and ships prebuilds only
+    // for Windows and macOS, so requiring it would break `pnpm install` on a
+    // Linux box without build tools. Nothing Maya does by default needs it —
+    // the pipe transport is the default precisely because a console screen
+    // buffer hard-wraps the long JSON lines these tools emit.
+    const { spawn } = await importNodePty();
     const pty = spawn(command, spec.args, {
       name: "xterm-color",
       // Wide enough that the console buffer wraps as little as possible.
@@ -267,5 +272,20 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
     return JSON.parse(line) as Record<string, unknown>;
   } catch {
     return null;
+  }
+}
+
+type NodePtyModule = typeof import("node-pty");
+
+async function importNodePty(): Promise<NodePtyModule> {
+  try {
+    return await import("node-pty");
+  } catch (cause) {
+    throw new Error(
+      'the "pty" transport needs the optional node-pty package, which is not installed ' +
+        "(it has no prebuilt binary for this platform and needs a C++ toolchain to build). " +
+        'Use the default "pipe" transport, or install node-pty yourself.',
+      { cause },
+    );
   }
 }

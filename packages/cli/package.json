@@ -14,6 +14,10 @@
   "dependencies": {
     "@maya/core": "workspace:*",
     "@maya/shared-types": "workspace:*",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
   }
 }

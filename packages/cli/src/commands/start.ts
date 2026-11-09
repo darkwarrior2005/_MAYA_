@@ -3,6 +3,7 @@ import type { Command } from "commander";
 import {
   CliConflictResolver,
   Daemon,
+  DeferredConflictResolver,
   EventBus,
   EventStore,
   HoldOnConflictResolver,
@@ -14,13 +15,18 @@ import {
   loadConfig,
   readLock,
   isLockAlive,
+  type ConflictResolver,
 } from "@maya/core";
+import type { OperatorRunReport } from "@maya/core";
 import { printEvent } from "../render.js";
+import { PaneManager } from "../tui/pane-manager.js";
+import { paneSpecs } from "../tui/specs.js";
 
 interface StartOptions {
   dir: string;
   port?: string;
   yes?: boolean;
+  tui?: boolean;
 }
 
 export function registerStart(program: Command): void {
@@ -31,6 +37,7 @@ export function registerStart(program: Command): void {
     .option("-d, --dir <dir>", "project directory", ".")
     .option("-p, --port <port>", "port for the local daemon")
     .option("-y, --yes", "never prompt on conflicts; hold the branch instead", false)
+    .option("-t, --tui", "watch the run in tmux-style panes instead of a scrolling log", false)
     .action(async (tasks: string[], options: StartOptions) => {
       const repoRoot = resolve(options.dir);
       const repo = new RepoManager(repoRoot);
@@ -55,7 +62,6 @@ export function registerStart(program: Command): void {
 
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
-      bus.subscribe(printEvent);
 
       const daemon = new Daemon({
         paths: repo.paths,
@@ -64,34 +70,81 @@ export function registerStart(program: Command): void {
         ...(options.port ? { port: Number(options.port) } : {}),
       });
       const lock = await daemon.start();
-      console.log(`[maya] daemon on ${daemon.address} (pid ${lock.pid})`);
-      console.log(`[maya] ${workers.length} worker(s): ${workers.map((w) => w.id).join(", ")}`);
 
-      const operator = new Operator({
-        repo,
-        registry: buildRegistry(repo.paths),
-        bus,
-        queue: new TaskQueue(store.database),
-        conflicts: options.yes ? new HoldOnConflictResolver(bus) : new CliConflictResolver(bus),
-        workers,
-      });
+      // `--yes` wins over the panes: it says never ask, so the Operator must
+      // not end up parked on a question nobody intends to answer.
+      const deferred = !options.yes && options.tui ? new DeferredConflictResolver(bus) : undefined;
+      const conflicts: ConflictResolver =
+        deferred ?? (options.yes ? new HoldOnConflictResolver(bus) : new CliConflictResolver(bus));
+
+      let panes: PaneManager | undefined;
+      if (options.tui) {
+        panes = new PaneManager({
+          daemonAddress: daemon.address,
+          ...paneSpecs(config),
+          ...(deferred ? { conflicts: deferred } : {}),
+          onUserMessage: (text) =>
+            bus.publish("main", null, "user_message", { type: "user_message", text }),
+        });
+        if (!panes.interactive) {
+          console.error("[maya] no TTY — falling back to the scrolling log");
+          panes = undefined;
+        }
+      }
+
+      // Exactly one renderer owns stdout: the log printer would scribble over
+      // the pane frame.
+      if (!panes) bus.subscribe(printEvent);
+
+      if (!panes) {
+        console.log(`[maya] daemon on ${daemon.address} (pid ${lock.pid})`);
+        console.log(`[maya] ${workers.length} worker(s): ${workers.map((w) => w.id).join(", ")}`);
+      }
+
+      const closed = panes ? panes.start() : Promise.resolve();
 
       try {
-        const report = await operator.run(tasks);
+        const report = await operatorRun();
+        const summary = summarize(report);
 
-        console.log("");
-        for (const outcome of report.outcomes) {
-          const state = outcome.stalled ? "stalled" : outcome.ok ? "ok" : "failed";
-          console.log(`  ${outcome.agent.id.padEnd(18)} ${state.padEnd(8)} ${outcome.branch}`);
+        if (panes?.active) {
+          summary.forEach((line) => panes?.announce(line));
+          panes.announce("run finished — /localhost for the web view, /quit to leave");
+          await closed;
+        } else {
+          // The user may have left the panes mid-run; the result still matters.
+          summary.forEach((line) => console.log(line));
         }
-        console.log("");
-        console.log(`merged ${report.merged.length}: ${report.merged.join(", ") || "-"}`);
-        console.log(`held   ${report.held.length}: ${report.held.join(", ") || "-"}`);
 
         process.exitCode = report.held.length === 0 ? 0 : 1;
       } finally {
+        panes?.stop();
         await daemon.stop();
         store.close();
       }
+
+      function operatorRun(): Promise<OperatorRunReport> {
+        const operator = new Operator({
+          repo,
+          registry: buildRegistry(repo.paths),
+          bus,
+          queue: new TaskQueue(store.database),
+          conflicts,
+          workers,
+        });
+        return operator.run(tasks);
+      }
     });
+}
+
+function summarize(report: OperatorRunReport): string[] {
+  const lines = [""];
+  for (const outcome of report.outcomes) {
+    const state = outcome.stalled ? "stalled" : outcome.ok ? "ok" : "failed";
+    lines.push(`  ${outcome.agent.id.padEnd(18)} ${state.padEnd(8)} ${outcome.branch}`);
+  }
+  lines.push("");
+  lines.push(`merged ${report.merged.length}: ${report.merged.join(", ") || "-"}`);
+  lines.push(`held   ${report.held.length}: ${report.held.join(", ") || "-"}`);
+  return lines;
 }

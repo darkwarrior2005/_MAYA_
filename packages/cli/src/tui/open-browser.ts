@@ -1,0 +1,42 @@
+import { spawn } from "node:child_process";
+
+/**
+ * Hands a URL to the platform's browser, reporting whether it launched one.
+ *
+ * Written out rather than taken from a dependency because it is three lines per
+ * platform, and because the process must be fully detached: a browser launcher
+ * that stayed a child would keep the pane view from exiting when the user quits.
+ *
+ * `MAYA_BROWSER=none` skips the launch and reports false, for a session with no
+ * browser to open — over SSH, in a container, or under test.
+ */
+export async function openBrowser(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  if (env["MAYA_BROWSER"] === "none") return false;
+
+  const { command, args } = launcher(url);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      // `start` is a cmd.exe builtin, so Windows needs a shell to reach it.
+      shell: process.platform === "win32",
+    });
+    child.once("error", reject);
+    child.unref();
+    resolve();
+  });
+  return true;
+}
+
+function launcher(url: string): { command: string; args: string[] } {
+  if (process.platform === "win32") {
+    // The empty string is `start`'s title argument; without it a quoted URL is
+    // taken as the window title and nothing opens.
+    return { command: "start", args: ['""', `"${url}"`] };
+  }
+  if (process.platform === "darwin") return { command: "open", args: [url] };
+  return { command: "xdg-open", args: [url] };
+}

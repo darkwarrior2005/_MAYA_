@@ -50,6 +50,20 @@ export abstract class BusConflictResolver implements ConflictResolver {
   protected abstract ask(request: ConflictRequest): Promise<ConflictAnswer>;
 }
 
+/**
+ * Shared by every interactive resolver so a "2" means the same thing typed at a
+ * readline prompt and typed into a TUI pane: a bare option number picks that
+ * option, anything else is the user's own answer.
+ */
+export function parseConflictReply(request: ConflictRequest, reply: string): ConflictAnswer {
+  const trimmed = reply.trim();
+  const index = Number(trimmed);
+  const picked =
+    trimmed !== "" && Number.isInteger(index) ? request.options[index - 1] : undefined;
+  if (picked) return { chosen: picked.id, custom: false };
+  return { chosen: trimmed, custom: true };
+}
+
 /** Terminal implementation: numbered options, with a free-text fallback. */
 export class CliConflictResolver extends BusConflictResolver {
   protected async ask(request: ConflictRequest): Promise<ConflictAnswer> {
@@ -66,14 +80,53 @@ export class CliConflictResolver extends BusConflictResolver {
 
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try {
-      const reply = (await rl.question("> ")).trim();
-      const index = Number(reply);
-      const picked = Number.isInteger(index) ? request.options[index - 1] : undefined;
-      if (picked) return { chosen: picked.id, custom: false };
-      return { chosen: reply, custom: true };
+      return parseConflictReply(request, await rl.question("> "));
     } finally {
       rl.close();
     }
+  }
+}
+
+/**
+ * Asks nobody directly: it parks the request and waits for whatever owns the
+ * terminal to answer. The pane renderer holds stdin in raw mode, so a resolver
+ * that opened its own readline would swallow the user's keystrokes and leave
+ * the Operator blocked on a prompt nothing could reach.
+ */
+export class DeferredConflictResolver extends BusConflictResolver {
+  private waiting:
+    | { request: ConflictRequest; settle: (answer: ConflictAnswer) => void }
+    | undefined;
+
+  /** The question currently awaiting an answer, if any. */
+  get pending(): ConflictRequest | undefined {
+    return this.waiting?.request;
+  }
+
+  /**
+   * Answers the open question. Returns false when nothing was waiting, so the
+   * caller can treat the input as an ordinary message instead of losing it.
+   */
+  answer(reply: string): boolean {
+    const waiting = this.waiting;
+    if (!waiting) return false;
+    this.waiting = undefined;
+    waiting.settle(parseConflictReply(waiting.request, reply));
+    return true;
+  }
+
+  /** Falls back to holding the branch when the UI goes away mid-question. */
+  abandon(): void {
+    const waiting = this.waiting;
+    if (!waiting) return;
+    this.waiting = undefined;
+    waiting.settle({ chosen: "hold", custom: false });
+  }
+
+  protected ask(request: ConflictRequest): Promise<ConflictAnswer> {
+    return new Promise<ConflictAnswer>((settle) => {
+      this.waiting = { request, settle };
+    });
   }
 }
 

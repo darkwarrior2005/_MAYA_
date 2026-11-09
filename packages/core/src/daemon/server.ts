@@ -84,6 +84,16 @@ export class Daemon {
     socket.on("error", unsubscribe);
   }
 
+  /**
+   * Drops every connected view, which makes each reconnect and ask for
+   * everything after the last event it rendered. That replay path is the only
+   * thing standing between a dropped socket and a view that is silently out of
+   * date, so it needs to be exercisable on demand rather than only by luck.
+   */
+  dropClients(): void {
+    this.wss?.clients.forEach((client) => client.terminate());
+  }
+
   async stop(): Promise<void> {
     this.wss?.clients.forEach((client) => client.terminate());
     await new Promise<void>((resolve) => {

@@ -1,0 +1,32 @@
+Maya pane view (maya attach), 118x30, Operator focused
+
+╔═ Operator ═════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                                                    ║
+║                                                                                                                    ║
+║                                                                                                                    ║
+║                                                                                                                    ║
+║                                                                                                                    ║
+║                                                                                                                    ║
+║                                                                                                                    ║
+║ attached read-only — the session's own terminal answers questions                                                  ║
+║ maya panes — daemon http://127.0.0.1:14111                                                                         ║
+║ /help for commands, Tab to switch panes, Ctrl-C to leave                                                           ║
+║ >> worker-claude: add a NOTES.md [maya/t1/worker-claude]                                                           ║
+║ merged maya/t1/worker-claude                                                                                       ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+┌─ Worker (Claude Code) ───────────────── running - 13kt ─┐┌─ Worker (Copilot CLI) ──────────────────────────────────┐
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│                                                         ││                                                         │
+│ -- running                                              ││                                                         │
+│ - Write                                                 ││                                                         │
+│ WORKER-LINE-ALPHA wrote NOTES.md                        ││                                                         │
+│ ESCAPED-LINE should stay inside its pane                ││                                                         │
+└─────────────────────────────────────────────────────────┘└─────────────────────────────────────────────────────────┘
+>
+maya  http://127.0.0.1:14111  pane 1/3 operator  Tab=switch  /help
