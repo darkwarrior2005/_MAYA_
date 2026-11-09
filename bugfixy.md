@@ -7,7 +7,11 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status: 151 tests, lint clean, five verification harnesses passing, on Windows.
+Status: 170 tests, lint clean, six verification harnesses passing, on Windows.
+
+**Update.** B1, B2, D1–D3 and A3 are now fixed, and an MCP server plus two
+agent skills have been added. What is left is marked **OPEN** below; the
+fixed entries are kept for the reasoning, with what was done.
 
 ---
 
@@ -27,7 +31,7 @@ a guess.
 
 ## A. The Operator does not think
 
-### A1 — `config.operator` is never dispatched to an adapter
+### A1 — The Operator still cannot split a request — **OPEN**
 
 **Evidence.** Grepping every use of `config.operator` finds it in `doctor.ts`
 (health check), `init.ts` (printing), `run.ts` (a fallback worker profile),
@@ -57,7 +61,7 @@ result. Three things make this safe rather than magic:
 **Effort.** Moderate. The adapter, bus, prompt flow and both UIs already exist;
 this is a new module plus a flag.
 
-### A2 — A worker has no way to ask the Operator anything
+### A2 — A worker has no way to ask the Operator anything — **OPEN**
 
 **Evidence.** The only agent-initiated channel is the `@user` marker, which
 goes to the user. There is no worker→Operator path in `core/src/orchestrator`.
@@ -76,7 +80,7 @@ user" and the plumbing is still correct.
 **Effort.** Small once A1 exists, because the answering step needs an agent.
 The marker, routing and payload are a day's work on their own.
 
-### A3 — "Summaries" are the task text truncated to 72 characters
+### A3 — Summaries were the task text truncated — **FIXED**
 
 **Evidence.** `firstLine(instruction)` in both `operator.ts` and
 `task-runner.ts` produces every `summary` — in the task queue, in
@@ -102,7 +106,7 @@ to call.
 
 ## B. Correctness and cost
 
-### B1 — Secret-channel text is written into the agent's context snapshot
+### B1 — Secret-channel text in the snapshot — **FIXED**
 
 **Evidence.** A plugin adapter emitting
 `@user the admin password for staging is hunter2 - is that right?` produced
@@ -123,7 +127,7 @@ plus a test asserting the marker never reaches `latest.md`.
 
 **Effort.** Small. Do this one first; it is the cheapest real fix here.
 
-### B2 — Nothing bounds what a run can spend
+### B2 — Nothing bounds what a run can spend — **FIXED**
 
 **Evidence.** `ClaudeCodeAdapterOptions` accepts `maxTurns` and
 `maxBudgetUsd`; nothing sets them. Copilot and Antigravity have no equivalent
@@ -149,7 +153,7 @@ more now that the rest works.
 **Effort.** 1 is trivial, 2 is small and worth doing because it is adapter
 agnostic.
 
-### B3 — Antigravity's failure shape is guessed
+### B3 — Antigravity's failure shape is guessed — **OPEN**
 
 **Evidence.** The comment in `antigravity-cli.ts` says so: success is inferred
 from reaching `state: "DONE"` without an error field, because no failing
@@ -171,7 +175,7 @@ then, treat an Antigravity worker as the least trustworthy of the three.
 
 ## C. Platform and verification
 
-### C1 — Nothing has ever been run on Linux
+### C1 — Nothing has ever been run on Linux — **OPEN**
 
 **Evidence.** Every command, test and harness in this project ran on Windows.
 
@@ -195,7 +199,7 @@ with a clear message rather than failing.
 **Effort.** Half a day, and it is the highest-value item here because it
 converts a claim into a fact.
 
-### C2 — The `@user` marker has never been used by a live agent
+### C2 — The `@user` marker has never been used by a live agent — **OPEN**
 
 **Evidence.** Every test of the secret channel publishes the event
 synthetically or uses a stub plugin. No real model has chosen to use it.
@@ -209,7 +213,7 @@ reaches for `@user`. If it does not, the briefing in
 `SECRET_CHANNEL_BRIEFING` needs to be stronger or placed differently in the
 prompt. Cheap to test as part of a run that was happening anyway.
 
-### C3 — One test is flaky and unidentified
+### C3 — One test is flaky and unidentified — **OPEN**
 
 **Evidence.** One of 144 failed once, during a run where the machine was busy
 with leftover daemons; 144/144 and then 151/151 on more than ten subsequent
@@ -226,7 +230,14 @@ make the wait event-driven.
 
 ---
 
-## D. Scaling
+## D. Scaling — **FIXED**
+
+`/api/usage` is now served from a running `UsageTracker` the daemon keeps,
+seeded once and updated per event. The socket replay and `/api/events` are
+capped at 500 by default. The web client folds its derived counters and the
+open question in as events arrive instead of rescanning. The measurements
+below are what prompted it.
+
 
 Measured on a seeded 5,000-event session.
 
@@ -276,6 +287,14 @@ receive keystrokes (ADR 0001). *Fix:* none needed unless an adapter with a
 genuine interactive session appears; the design note already records it.
 
 ---
+
+## What A1 still needs
+
+A3 built `SummaryGenerator`, which is the first thing that runs the Operator's
+own adapter — so the pattern for A1 exists now: resolve the operator profile
+through the registry, run one bounded turn, parse a typed result, fall back
+when anything goes wrong. A1 is the same shape with a task list instead of a
+commit message, plus the confirmation step before dispatch.
 
 ## Suggested order
 

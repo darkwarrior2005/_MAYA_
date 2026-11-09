@@ -43,22 +43,22 @@ export function aggregateUsage(events: Iterable<BusEvent>): UsageTotals {
       payload.type === "usage" ? payload.usage : payload.type === "done" ? payload.usage : undefined;
     if (!usage) continue;
 
-    byAgent[agentId] = highest(byAgent[agentId], usage);
+    byAgent[agentId] = largest(byAgent[agentId], usage);
   }
 
   for (const [agentId, usage] of Object.entries(byAgent)) {
     const model = modelOf.get(agentId) ?? "unknown";
-    byModel[model] = add(byModel[model], usage);
+    byModel[model] = sum(byModel[model], usage);
   }
 
   let total: TokenUsage = { inputTokens: 0, outputTokens: 0 };
-  for (const usage of Object.values(byAgent)) total = add(total, usage);
+  for (const usage of Object.values(byAgent)) total = sum(total, usage);
 
   return { byAgent, byModel, total };
 }
 
 /** Within one agent's run, readings restate the same total. */
-function highest(current: TokenUsage | undefined, next: TokenUsage): TokenUsage {
+function largest(current: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   if (!current) return { ...next };
   return build(
     Math.max(current.inputTokens, next.inputTokens),
@@ -70,7 +70,7 @@ function highest(current: TokenUsage | undefined, next: TokenUsage): TokenUsage 
 }
 
 /** Across agents and models, usage adds up. */
-function add(current: TokenUsage | undefined, next: TokenUsage): TokenUsage {
+function sum(current: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   const base = current ?? { inputTokens: 0, outputTokens: 0 };
   return build(
     base.inputTokens + next.inputTokens,
@@ -93,4 +93,55 @@ function build(
   if (cacheWrite > 0) usage.cacheWriteTokens = cacheWrite;
   if (cost > 0) usage.costUsd = cost;
   return usage;
+}
+
+/**
+ * The same roll-up, kept up to date as events arrive instead of recomputed.
+ *
+ * `aggregateUsage` walks the whole log, and the web client asks for totals on
+ * every usage event — 82ms per request at 5,000 events, growing with the
+ * session. The daemon keeps one of these instead: seeded once from history,
+ * then O(1) per event.
+ */
+export class UsageTracker {
+  private readonly byAgent = new Map<AgentId, TokenUsage>();
+  private readonly modelOf = new Map<AgentId, string>();
+
+  /** Catches up on a log written before this process started. */
+  seed(events: Iterable<BusEvent>): this {
+    for (const event of events) this.record(event);
+    return this;
+  }
+
+  record(event: BusEvent): void {
+    const payload = event.payload;
+    const agentId = event.agentId ?? "maya";
+
+    if (payload.type === "status" && payload.detail?.startsWith("model ")) {
+      this.modelOf.set(agentId, payload.detail.slice("model ".length).trim());
+      return;
+    }
+
+    const usage =
+      payload.type === "usage" ? payload.usage : payload.type === "done" ? payload.usage : undefined;
+    if (!usage) return;
+
+    // Within one agent's run the readings restate the same total, so the
+    // largest is the run's usage. See `aggregateUsage`.
+    this.byAgent.set(agentId, largest(this.byAgent.get(agentId), usage));
+  }
+
+  totals(): UsageTotals {
+    const byModel: Record<string, TokenUsage> = {};
+    const byAgent: Record<AgentId, TokenUsage> = {};
+    let total: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+
+    for (const [agentId, usage] of this.byAgent) {
+      byAgent[agentId] = usage;
+      const model = this.modelOf.get(agentId) ?? "unknown";
+      byModel[model] = sum(byModel[model], usage);
+      total = sum(total, usage);
+    }
+    return { byAgent, byModel, total };
+  }
 }

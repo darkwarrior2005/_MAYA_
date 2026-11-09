@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import type { BusEvent, GitGraph, RepoTree, SessionInfo, TaskSpec, UsageTotals } from "@maya/shared-types";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
+import type { GitGraph, RepoTree, SessionInfo, TaskSpec, UsageTotals } from "@maya/shared-types";
 import {
   fetchConflict,
   fetchFiles,
@@ -9,18 +9,14 @@ import {
   fetchUsage,
 } from "./api.js";
 import { Chat } from "./Chat.js";
-import { ConflictPrompt, type PendingConflict } from "./ConflictPrompt.js";
+import { ConflictPrompt } from "./ConflictPrompt.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { GitTree } from "./GitTree.js";
 import { AgentsRoster, AgentsToDo, InfoPanel, SecretChannel } from "./Panels.js";
 import { useBus } from "./useBus.js";
 
-/** Events that mean the commit graph, the tasks or the usage have moved on. */
-const GRAPH_CHANGING = new Set(["merge_result", "task_completed", "task_assigned"]);
-const USAGE_CHANGING = new Set(["usage", "done"]);
-
 export function App(): ReactElement {
-  const { events, connection, signals } = useBus();
+  const { events, connection, signals, derived } = useBus();
 
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [graph, setGraph] = useState<GitGraph | null>(null);
@@ -64,25 +60,24 @@ export function App(): ReactElement {
 
   // The graph, the task list and the working tree are state the event log
   // describes but does not contain, so they are re-read when an event says
-  // they have moved.
-  const graphMoved = events.filter((event) => GRAPH_CHANGING.has(event.type)).length;
+  // they have moved. The counters are folded in as events arrive rather than
+  // rescanned here.
   useEffect(() => {
-    if (graphMoved > 0) reloadSession();
-  }, [graphMoved, reloadSession]);
+    if (derived.graphMoved > 0) reloadSession();
+  }, [derived.graphMoved, reloadSession]);
 
-  const usageMoved = events.filter((event) => USAGE_CHANGING.has(event.type)).length;
   useEffect(() => {
-    if (usageMoved > 0) reloadUsage();
-  }, [usageMoved, reloadUsage]);
+    if (derived.usageMoved > 0) reloadUsage();
+  }, [derived.usageMoved, reloadUsage]);
 
   useEffect(() => {
     if (signals.files_changed > 0) reloadFiles();
   }, [signals.files_changed, reloadFiles]);
 
-  // A question is open until a resolution for that same prompt arrives. Both
-  // are events, so this stays right through a reload or a reconnect without
-  // asking the daemon what it is waiting on.
-  const pending = useMemo(() => openConflict(events), [events]);
+  // A question is open until a resolution for it arrives. Both are events, so
+  // this survives a reload or a reconnect without asking the daemon what it
+  // is waiting on.
+  const pending = derived.conflict;
 
   return (
     <div className="app">
@@ -188,21 +183,6 @@ export function App(): ReactElement {
       </section>
     </div>
   );
-}
-
-/** The last conflict prompt with no matching resolution, if there is one. */
-function openConflict(events: BusEvent[]): PendingConflict | null {
-  const answered = new Set<string>();
-  for (const event of events) {
-    if (event.payload.type === "conflict_resolved") answered.add(event.payload.promptId);
-  }
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const payload = events[index]?.payload;
-    if (payload?.type !== "conflict_prompt") continue;
-    if (answered.has(payload.promptId)) continue;
-    return { question: payload.question, options: payload.options };
-  }
-  return null;
 }
 
 function Loading(): ReactElement {

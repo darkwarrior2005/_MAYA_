@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentDescriptor, AgentEvent, TaskId } from "@maya/shared-types";
 import type { AgentAdapter } from "../adapters/adapter.js";
-import { withStallWatchdog } from "../adapters/watchdog.js";
+import { withRunLimits } from "../adapters/watchdog.js";
 import type { EventBus } from "../bus/event-bus.js";
 import { BranchManager } from "../git/branch-manager.js";
 import { MergeService } from "../git/merge-service.js";
@@ -14,6 +14,10 @@ export interface TaskRunInput {
   summary?: string;
   agent: AgentDescriptor;
   stallTimeoutSec?: number;
+  maxRunSeconds?: number;
+  maxTokens?: number;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
   allowedTools?: string[];
   deniedTools?: string[];
   /** Skip the merge step and leave the work on its branch for review. */
@@ -73,7 +77,7 @@ export class TaskRunner {
     });
 
     const transcript: string[] = [];
-    const handle = withStallWatchdog(
+    const handle = withRunLimits(
       await this.adapter.start({
         agentId: input.agent.id,
         cwd: this.repo.repoRoot,
@@ -81,14 +85,23 @@ export class TaskRunner {
         ...(input.agent.model ? { model: input.agent.model } : {}),
         ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),
         ...(input.deniedTools ? { deniedTools: input.deniedTools } : {}),
+        ...(input.maxTurns !== undefined ? { maxTurns: input.maxTurns } : {}),
+        ...(input.maxBudgetUsd !== undefined ? { maxBudgetUsd: input.maxBudgetUsd } : {}),
       }),
-      input.stallTimeoutSec,
+      {
+        ...(input.stallTimeoutSec !== undefined
+          ? { stallTimeoutSec: input.stallTimeoutSec }
+          : {}),
+        ...(input.maxRunSeconds !== undefined ? { maxRunSeconds: input.maxRunSeconds } : {}),
+        ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
+      },
     );
 
     handle.onEvent((event) => {
-      if (event.type === "text") transcript.push(event.text);
-      if (event.type === "tool_call") transcript.push(`[tool] ${event.toolName}`);
-      publishAgentEvent(this.bus, input.agent.id, event);
+      // The transcript comes back from the publisher, which has already taken
+      // the user's private lines out of it.
+      const recorded = publishAgentEvent(this.bus, input.agent.id, event);
+      if (recorded.transcript) transcript.push(recorded.transcript);
     });
 
     const result = await handle.waitForCompletion();

@@ -70,8 +70,8 @@ describe("EventStore", () => {
       payload: { type: "text", agentId: "b", text: "private" },
     });
 
-    expect(store.since(0, "secret")).toHaveLength(1);
-    expect(store.since(0, "main")).toHaveLength(1);
+    expect(store.since(0, { channel: "secret" })).toHaveLength(1);
+    expect(store.since(0, { channel: "main" })).toHaveLength(1);
   });
 });
 

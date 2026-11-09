@@ -116,10 +116,10 @@ class ClaudeCodeHandle implements AgentHandle {
         this.stderr.push(data);
       },
       permissionMode: adapterOptions.permissionMode ?? "acceptEdits",
-      ...(adapterOptions.maxTurns !== undefined ? { maxTurns: adapterOptions.maxTurns } : {}),
-      ...(adapterOptions.maxBudgetUsd !== undefined
-        ? { maxBudgetUsd: adapterOptions.maxBudgetUsd }
-        : {}),
+      // The worker profile wins over the adapter default, so one worker can
+      // be given a tighter budget than another.
+      ...budget("maxTurns", options.maxTurns, adapterOptions.maxTurns),
+      ...budget("maxBudgetUsd", options.maxBudgetUsd, adapterOptions.maxBudgetUsd),
       ...(options.model ? { model: options.model } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
     } as Options;
@@ -300,4 +300,14 @@ function toTokenUsage(message: Extract<SDKMessage, { type: "result" }>): TokenUs
       : {}),
     costUsd: message.total_cost_usd,
   };
+}
+
+/** First defined wins, and an unset budget is left off entirely. */
+function budget(
+  key: "maxTurns" | "maxBudgetUsd",
+  fromProfile: number | undefined,
+  fromAdapter: number | undefined,
+): Record<string, number> {
+  const value = fromProfile ?? fromAdapter;
+  return value === undefined ? {} : { [key]: value };
 }

@@ -29,27 +29,33 @@ const EXTERNAL = ["better-sqlite3", "node-pty", "@anthropic-ai/claude-agent-sdk"
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-await esbuild.build({
-  entryPoints: [join(repoRoot, "packages/cli/dist/main.js")],
-  outfile: join(out, "maya.mjs"),
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node20",
-  external: EXTERNAL,
-  banner: {
-    // `ws` and simple-git reach for CJS globals that an ESM bundle lacks.
-    js: [
-      "import { createRequire as __createRequire } from 'node:module';",
-      "import { fileURLToPath as __fileURLToPath } from 'node:url';",
-      "import { dirname as __dirname_ } from 'node:path';",
-      "const require = __createRequire(import.meta.url);",
-      "const __filename = __fileURLToPath(import.meta.url);",
-      "const __dirname = __dirname_(__filename);",
-    ].join("\n"),
-  },
-  logLevel: "info",
-});
+const bundle = async (entry, outfile) =>
+  esbuild.build({
+    entryPoints: [join(repoRoot, entry)],
+    outfile: join(out, outfile),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    external: EXTERNAL,
+    banner: {
+      // `ws` and simple-git reach for CJS globals an ESM bundle lacks.
+      js: [
+        "import { createRequire as __createRequire } from 'node:module';",
+        "import { fileURLToPath as __fileURLToPath } from 'node:url';",
+        "import { dirname as __dirname_ } from 'node:path';",
+        "const require = __createRequire(import.meta.url);",
+        "const __filename = __fileURLToPath(import.meta.url);",
+        "const __dirname = __dirname_(__filename);",
+      ].join(String.fromCharCode(10)),
+    },
+    logLevel: "info",
+  });
+
+await bundle("packages/cli/dist/main.js", "maya.mjs");
+// The MCP server ships alongside, so an installed Maya can be driven by
+// another agent without the workspace being present.
+await bundle("packages/mcp-server/dist/main.js", "maya-mcp.mjs");
 
 // The daemon serves this; findWebClient() looks for it beside the bundle.
 cpSync(join(repoRoot, "packages/web-client/dist"), join(out, "web-client"), { recursive: true });
@@ -73,7 +79,7 @@ writeFileSync(
       version: cliPkg.version,
       private: true,
       type: "module",
-      bin: { maya: "./maya.mjs" },
+      bin: { maya: "./maya.mjs", "maya-mcp": "./maya-mcp.mjs" },
       engines: { node: ">=20.13" },
       dependencies,
       optionalDependencies: optional,
@@ -95,6 +101,16 @@ writeFileSync(
     "",
     "`node-pty` is optional and only needed for the `pty` transport and the",
     "verification harnesses; it has no Linux prebuild.",
+    "",
+    "## Driving Maya from another agent",
+    "",
+    "`maya-mcp` is an MCP server over stdio. Point an MCP client at it and set",
+    "`MAYA_PROJECT` to the repository Maya is managing:",
+    "",
+    '    { "command": "maya-mcp", "env": { "MAYA_PROJECT": "/path/to/project" } }',
+    "",
+    "It needs a session running — `maya web` or `maya start` — and says so when",
+    "there is not one.",
     "",
   ].join("\n"),
   "utf8",

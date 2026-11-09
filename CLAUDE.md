@@ -45,9 +45,15 @@ optional `node-pty`:
 node tools/verify/panes.mjs      # 23 checks in a real pseudoconsole
 node tools/verify/conflict.mjs   # a merge question in a pane, answered
 node tools/verify/column-width.mjs  # width.ts against a real terminal
+node tools/verify/mcp.mjs        # the MCP server over stdio, against a daemon
 node tools/verify/live-run.mjs   # a real agent run; costs money
 node tools/verify/packaged.mjs   # the bundle, driven from an unrelated cwd
 ```
+
+`.claude/skills/` holds two skills for agents working here: `maya-session`
+(take part in a running session) and `maya-run` (operate Maya itself).
+`.mcp.json` registers the MCP server for this repository; elsewhere, point a
+client at `maya-mcp` with `MAYA_PROJECT` set to the managed repository.
 
 A project can add its own adapter by naming a module in `.maya/config.json`;
 `docs/adapter-plugin-example.mjs` is a working one. That list runs the code it
@@ -68,6 +74,7 @@ names — see `docs/adr/0004`.
 | `tools/` | `package.mjs` bundles the CLI; `verify/` holds the checks that cannot be unit tests. |
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
+| `packages/mcp-server` | Maya as an MCP server over stdio, so another agent can read the session, post to it, reach the person, and answer the Operator. Talks to the daemon over HTTP like any other client. |
 | `packages/web-client` | React + Vite: git tree, repository browser, chat. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
 
 Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
@@ -75,7 +82,7 @@ Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 
 ## Invariants
 
-Fifteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
+Sixteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
 1. **The Operator alone merges.** A stalled or failed worker's branch is never
@@ -112,14 +119,18 @@ because they were broken once already.
     no escape sequences.** Columns, not characters: measure with
     `displayWidth`, never `.length`. Where a terminal's rules are unknown,
     err wide — a gap is harmless, a wrap scrolls the screen.
-12. **One worker runs one task at a time.** Workers run in parallel, but a
+12. **A run is bounded three ways**, not one: silence, wall clock and tokens.
+    Silence alone misses the opposite failure — a denied or looping agent
+    keeps talking, so the stall timer is re-armed forever while the run
+    spends.
+13. **One worker runs one task at a time.** Workers run in parallel, but a
     worker with several tasks works through them in order: concurrent runs of
     one agent share a log file, a pane and a context snapshot.
-13. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
+14. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
     `.gitignore`.
-14. **Context snapshots are written temp-then-rename with retries**, and a
+15. **Context snapshots are written temp-then-rename with retries**, and a
     failed snapshot logs and skips rather than crashing the daemon.
-15. **Recovery never deletes a worktree.** A daemon that crashed mid-run
+16. **Recovery never deletes a worktree.** A daemon that crashed mid-run
     leaves uncommitted agent work in one; recovery reports it and prunes only
     metadata for directories that are already gone.
 

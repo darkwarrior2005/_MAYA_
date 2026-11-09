@@ -10,6 +10,16 @@ export interface WorkerProfile {
   /** Seconds of silence before the liveness watchdog declares the agent stalled. */
   stallTimeoutSec: number;
   /**
+   * Ceilings for a single run. Silence is not enough on its own: a denied or
+   * looping agent keeps talking, so the stall timer never fires while the run
+   * burns turns. Unset means no ceiling.
+   */
+  maxRunSeconds?: number;
+  maxTokens?: number;
+  /** Passed to adapters that enforce their own budget, like Claude Code. */
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  /**
    * Tool permissions in the underlying CLI's own pattern syntax, e.g.
    * ["write", "shell(git:*)"] for Copilot. Omitted means the adapter's
    * conservative default (edits only, no shell).

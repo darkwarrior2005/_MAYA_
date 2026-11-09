@@ -50,11 +50,22 @@ export function splitSecretLines(text: string): SplitText {
 /**
  * The one place agent events reach the bus, so the secret channel cannot be
  * forgotten by a caller. Everything except text passes through untouched.
+ *
+ * Returns what belongs in the agent's recorded transcript: the main part
+ * only. Callers used to push `event.text` themselves and so wrote the user's
+ * private line into `.maya/agents/<id>/latest.md` alongside everything else —
+ * a line the channel had just promised would not go through the Operator sat
+ * in a file the Operator could read. Taking the transcript text from here
+ * means a caller cannot record the unsplit version by accident.
  */
-export function publishAgentEvent(bus: EventBus, agentId: AgentId, event: AgentEvent): void {
+export function publishAgentEvent(
+  bus: EventBus,
+  agentId: AgentId,
+  event: AgentEvent,
+): { transcript: string | null } {
   if (event.type !== "text") {
     bus.publish("main", agentId, event.type, event);
-    return;
+    return { transcript: event.type === "tool_call" ? `[tool] ${event.toolName}` : null };
   }
 
   const { main, secret } = splitSecretLines(event.text);
@@ -70,4 +81,5 @@ export function publishAgentEvent(bus: EventBus, agentId: AgentId, event: AgentE
   // A message that was entirely for the user leaves nothing for the main
   // transcript, and publishing an empty line there would be noise.
   if (main) bus.publish("main", agentId, "text", { ...event, text: main });
+  return { transcript: main || null };
 }

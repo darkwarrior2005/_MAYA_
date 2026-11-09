@@ -10,6 +10,7 @@ import {
   isLockAlive,
   loadConfig,
   readLock,
+  UsageTracker,
   recoverSession,
 } from "@maya/core";
 import { openBrowser } from "../tui/open-browser.js";
@@ -45,6 +46,11 @@ export function registerWeb(program: Command): void {
       const config = loadConfig(repo.paths);
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
+
+      // One running total, seeded from history then updated per event, so
+      // the info panel does not rescan the whole log every time it refreshes.
+      const usage = new UsageTracker().seed(store.since(0));
+      bus.subscribe((event) => usage.record(event));
       const clientDir = findWebClient();
 
       // Any daemon starts by tidying up after one that did not stop cleanly.
@@ -66,6 +72,7 @@ export function registerWeb(program: Command): void {
           bus,
           config,
           ...(clientDir ? { clientDir } : {}),
+          usage: () => usage.totals(),
         },
       });
 

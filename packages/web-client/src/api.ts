@@ -34,8 +34,14 @@ export const fetchFiles = (): Promise<RepoTree> => get("/api/files");
 export const fetchTasks = (): Promise<TaskSpec[]> => get("/api/tasks");
 export const fetchUsage = (): Promise<UsageTotals> => get("/api/usage");
 export const fetchConflict = (): Promise<ConflictState> => get("/api/conflict");
-export const fetchEvents = (since: number): Promise<BusEvent[]> =>
-  get(`/api/events?since=${since}`);
+export interface EventPage {
+  events: BusEvent[];
+  /** Everything in the log, so a client knows whether it has the lot. */
+  total: number;
+}
+
+export const fetchEvents = (since: number, limit?: number): Promise<EventPage> =>
+  get(`/api/events?since=${since}${limit ? `&limit=${limit}` : ""}`);
 
 export async function answerConflict(answer: string): Promise<void> {
   const response = await fetch("/api/conflict", {

@@ -1,6 +1,12 @@
 import Database from "better-sqlite3";
 import type { BusEvent, ChatChannel, EventId } from "@maya/shared-types";
 
+export interface SinceOptions {
+  channel?: ChatChannel;
+  /** Newest `limit` events only. Omitted means everything since the id. */
+  limit?: number;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,8 +82,32 @@ export class EventStore {
     return { ...event, id: Number(result.lastInsertRowid), createdAt };
   }
 
-  /** Replay for a client reconnecting with the last event id it already has. */
-  since(lastSeenId: EventId, channel?: ChatChannel): BusEvent[] {
+  /**
+   * Replay for a client reconnecting with the last event id it already has.
+   *
+   * `limit` caps how much comes back, newest-first then re-sorted, so a client
+   * joining a long session gets the recent history rather than all of it: at
+   * 5,000 events an uncapped replay was 1.1 MB on every page load.
+   */
+  since(lastSeenId: EventId, options: SinceOptions = {}): BusEvent[] {
+    const { channel, limit } = options;
+    if (limit !== undefined && limit > 0) {
+      const rows = channel
+        ? (this.db
+            .prepare(
+              `SELECT * FROM (SELECT * FROM events WHERE id > ? AND channel = ?
+                 ORDER BY id DESC LIMIT ?) ORDER BY id ASC`,
+            )
+            .all(lastSeenId, channel, limit) as EventRow[])
+        : (this.db
+            .prepare(
+              `SELECT * FROM (SELECT * FROM events WHERE id > ?
+                 ORDER BY id DESC LIMIT ?) ORDER BY id ASC`,
+            )
+            .all(lastSeenId, limit) as EventRow[]);
+      return rows.map(toBusEvent);
+    }
+
     const rows = channel
       ? (this.db
           .prepare(`SELECT * FROM events WHERE id > ? AND channel = ? ORDER BY id ASC`)
@@ -86,6 +116,12 @@ export class EventStore {
           .prepare(`SELECT * FROM events WHERE id > ? ORDER BY id ASC`)
           .all(lastSeenId) as EventRow[]);
     return rows.map(toBusEvent);
+  }
+
+  /** How many events are in the log, for a client deciding whether to ask for more. */
+  count(): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM events`).get() as { n: number };
+    return row.n;
   }
 
   latestId(): EventId {

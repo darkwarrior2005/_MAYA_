@@ -21,6 +21,13 @@ export interface AgentRunOptions {
    */
   allowedTools?: string[];
   deniedTools?: string[];
+  /**
+   * Budgets the tool enforces itself, where it can. The adapter-agnostic
+   * ceilings live in `withRunLimits`; these are the native ones, which stop a
+   * run before it spends rather than after.
+   */
+  maxTurns?: number;
+  maxBudgetUsd?: number;
 }
 
 export interface AgentRunResult {

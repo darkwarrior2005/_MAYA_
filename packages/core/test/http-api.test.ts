@@ -110,12 +110,18 @@ describe("the daemon's HTTP API", () => {
     const first = bus.publish("main", "a", "text", { type: "text", agentId: "a", text: "one" });
     bus.publish("main", "a", "text", { type: "text", agentId: "a", text: "two" });
 
-    const all = (await (await get("/api/events?since=0")).json()) as BusEvent[];
-    expect(all).toHaveLength(2);
+    const all = (await (await get("/api/events?since=0")).json()) as {
+      events: BusEvent[];
+      total: number;
+    };
+    expect(all.events).toHaveLength(2);
+    expect(all.total).toBe(2);
 
-    const rest = (await (await get(`/api/events?since=${first.id}`)).json()) as BusEvent[];
-    expect(rest).toHaveLength(1);
-    expect((rest[0]?.payload as { text: string }).text).toBe("two");
+    const rest = (await (await get(`/api/events?since=${first.id}`)).json()) as {
+      events: BusEvent[];
+    };
+    expect(rest.events).toHaveLength(1);
+    expect((rest.events[0]?.payload as { text: string }).text).toBe("two");
   });
 
   it("lists tasks for the agents-to-do panel", async () => {
@@ -412,5 +418,48 @@ describe("who the daemon will talk to", () => {
       headers: { origin: "null" },
     });
     expect(response.status).toBe(403);
+  });
+});
+
+describe("bounded responses", () => {
+  it("caps the events route rather than returning the whole log", async () => {
+    const { get, bus } = await serve();
+    for (let index = 0; index < 20; index += 1) {
+      bus.publish("main", "a", "text", { type: "text", agentId: "a", text: `line ${index}` });
+    }
+
+    const page = (await (await get("/api/events?since=0&limit=5")).json()) as {
+      events: BusEvent[];
+      total: number;
+    };
+
+    // The newest, so a client joining late sees what just happened.
+    expect(page.events).toHaveLength(5);
+    expect(page.total).toBe(20);
+    expect((page.events.at(-1)?.payload as { text: string }).text).toBe("line 19");
+  });
+
+  it("takes a secret-channel message from a named sender", async () => {
+    const { daemon, store } = await serve();
+    const response = await fetch(`${daemon.address}/api/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "which encoding?", channel: "secret", from: "worker-a" }),
+    });
+
+    expect(response.status).toBe(200);
+    const secret = store.since(0, { channel: "secret" });
+    expect(secret).toHaveLength(1);
+    expect(secret[0]?.agentId).toBe("worker-a");
+  });
+
+  it("refuses a secret message with nobody to attribute it to", async () => {
+    const { daemon } = await serve();
+    const response = await fetch(`${daemon.address}/api/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "anonymous", channel: "secret" }),
+    });
+    expect(response.status).toBe(400);
   });
 });

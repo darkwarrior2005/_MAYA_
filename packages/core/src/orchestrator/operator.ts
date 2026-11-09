@@ -2,7 +2,7 @@ import { simpleGit } from "simple-git";
 import type { AgentDescriptor, TaskSpec } from "@maya/shared-types";
 import type { AgentAdapter } from "../adapters/adapter.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
-import { withStallWatchdog } from "../adapters/watchdog.js";
+import { withRunLimits } from "../adapters/watchdog.js";
 import type { EventBus } from "../bus/event-bus.js";
 import type { WorkerProfile } from "../config/maya-config.js";
 import { BranchManager } from "../git/branch-manager.js";
@@ -12,6 +12,7 @@ import { WorktreeManager } from "../git/worktree-manager.js";
 import { ContextWriter } from "../persistence/context-writer.js";
 import type { ConflictResolver } from "./conflict-resolver.js";
 import { publishAgentEvent } from "./secret-channel.js";
+import { SummaryGenerator } from "./summary-generator.js";
 import type { TaskQueue } from "./task-queue.js";
 import { withSecretChannel } from "./task-runner.js";
 
@@ -22,6 +23,12 @@ export interface OperatorDeps {
   queue: TaskQueue;
   conflicts: ConflictResolver;
   workers: WorkerProfile[];
+  /**
+   * The Operator's own profile. Given one, it describes each worker's change
+   * for the commit message instead of restating the task; without one, the
+   * behaviour is unchanged.
+   */
+  operator?: WorkerProfile;
 }
 
 export interface WorkerOutcome {
@@ -51,6 +58,7 @@ export class Operator {
   private readonly branches: BranchManager;
   private readonly merges: MergeService;
   private readonly contextWriter: ContextWriter;
+  private readonly summaries: SummaryGenerator;
 
   constructor(private readonly deps: OperatorDeps) {
     this.worktrees = new WorktreeManager(deps.repo.git, deps.repo.paths);
@@ -63,6 +71,13 @@ export class Operator {
         message: warning,
         fatal: false,
       }),
+    );
+    const operator = deps.operator;
+    this.summaries = new SummaryGenerator(
+      operator && deps.registry.has(operator.tool)
+        ? { adapter: deps.registry.get(operator.tool), profile: operator }
+        : undefined,
+      deps.repo.git,
     );
   }
 
@@ -185,7 +200,7 @@ export class Operator {
     const adapter: AgentAdapter = this.deps.registry.get(profile.tool);
     const transcript: string[] = [];
 
-    const handle = withStallWatchdog(
+    const handle = withRunLimits(
       await adapter.start({
         agentId: profile.id,
         cwd: worktree.path,
@@ -193,14 +208,21 @@ export class Operator {
         ...(profile.model ? { model: profile.model } : {}),
         ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
         ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
+        ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
+        ...(profile.maxBudgetUsd !== undefined ? { maxBudgetUsd: profile.maxBudgetUsd } : {}),
       }),
-      profile.stallTimeoutSec,
+      {
+        stallTimeoutSec: profile.stallTimeoutSec,
+        ...(profile.maxRunSeconds !== undefined ? { maxRunSeconds: profile.maxRunSeconds } : {}),
+        ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
+      },
     );
 
     handle.onEvent((event) => {
-      if (event.type === "text") transcript.push(event.text);
-      if (event.type === "tool_call") transcript.push(`[tool] ${event.toolName}`);
-      publishAgentEvent(this.deps.bus, profile.id, event);
+      // The transcript comes back from the publisher, which has already taken
+      // the user's private lines out of it.
+      const recorded = publishAgentEvent(this.deps.bus, profile.id, event);
+      if (recorded.transcript) transcript.push(recorded.transcript);
     });
 
     const result = await handle.waitForCompletion();
@@ -212,19 +234,30 @@ export class Operator {
       status: result.stalled ? "stalled" : result.ok ? "completed" : "failed",
     });
 
-    // Commit inside the worktree, where the agent actually wrote files.
-    const committed = result.ok
-      ? await new BranchManager(simpleGit(worktree.path)).commitAll(
-          `${task.summary}\n\nTask ${task.id} by ${agent.displayName}`,
-        )
-      : null;
+    // Commit inside the worktree, where the agent actually wrote files. The
+    // message describes the change rather than restating the request — see
+    // SummaryGenerator for why that was worth building.
+    let committed: string | null = null;
+    let summary = task.summary;
+    if (result.ok) {
+      const described = await this.summaries.describe({
+        instruction: task.instruction,
+        transcript: transcript.join("\n"),
+        branch: worktree.branch,
+        base,
+      });
+      summary = described.subject;
+      committed = await new BranchManager(simpleGit(worktree.path)).commitAll(
+        commitMessage(described.subject, described.body, task.id, agent.displayName),
+      );
+    }
 
     this.deps.bus.publish("main", profile.id, "task_completed", {
       type: "task_completed",
       taskId: task.id,
       agentId: profile.id,
       ok: result.ok,
-      summary: task.summary,
+      summary,
     });
 
     // The branch now holds the commit; the checkout itself is disposable.
@@ -241,6 +274,13 @@ export class Operator {
       ...(result.error ? { error: result.error } : {}),
     };
   }
+}
+
+/** Subject, blank line, body, then the trailer — git's own shape. */
+function commitMessage(subject: string, body: string, taskId: string, agent: string): string {
+  const trailer = `Task ${taskId} by ${agent}`;
+  const parts = body ? [subject, "", body, "", trailer] : [subject, "", trailer];
+  return parts.join("\n");
 }
 
 function firstLine(text: string): string {

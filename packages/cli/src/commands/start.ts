@@ -16,6 +16,7 @@ import {
   loadRegistry,
   recoverSession,
   readLock,
+  UsageTracker,
   isLockAlive,
   type ConflictResolver,
 } from "@maya/core";
@@ -66,6 +67,11 @@ export function registerStart(program: Command): void {
       const store = new EventStore(repo.paths.dbFile);
       const bus = new EventBus(store);
 
+      // One running total, seeded from history then updated per event, so
+      // the info panel does not rescan the whole log every time it refreshes.
+      const usage = new UsageTracker().seed(store.since(0));
+      bus.subscribe((event) => usage.record(event));
+
       // Whatever the last daemon left behind, before anything of this session
       // is running and could be confused with it.
       const recovery = await recoverSession({ paths: repo.paths, git: repo.git, store });
@@ -97,6 +103,7 @@ export function registerStart(program: Command): void {
           bus,
           config,
           ...(clientDir ? { clientDir } : {}),
+          usage: () => usage.totals(),
           ...(deferred ? { conflicts: deferred } : {}),
         },
       });
@@ -166,6 +173,9 @@ export function registerStart(program: Command): void {
           queue: new TaskQueue(store.database),
           conflicts,
           workers,
+          // Lets the Operator describe each change for the commit message
+          // instead of restating the task.
+          operator: config.operator,
         });
         return operator.run(tasks);
       }

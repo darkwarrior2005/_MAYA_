@@ -62,6 +62,10 @@ export function registerRun(program: Command): void {
         stallTimeoutSec: options.timeout ? Number(options.timeout) : profile.stallTimeoutSec,
         ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
         ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
+        ...(profile.maxRunSeconds !== undefined ? { maxRunSeconds: profile.maxRunSeconds } : {}),
+        ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
+        ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
+        ...(profile.maxBudgetUsd !== undefined ? { maxBudgetUsd: profile.maxBudgetUsd } : {}),
         ...(options.hold ? { holdForReview: true } : {}),
       });
 

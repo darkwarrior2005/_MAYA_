@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "maya": {
+      "command": "node",
+      "args": ["packages/mcp-server/dist/main.js"],
+      "env": {}
+    }
+  }
+}

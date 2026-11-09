@@ -10,6 +10,7 @@ import { buildGraph } from "../git/graph-builder.js";
 import type { DeferredConflictResolver } from "../orchestrator/conflict-resolver.js";
 import { TaskQueue } from "../orchestrator/task-queue.js";
 import { aggregateUsage } from "../usage/token-tracker.js";
+import type { UsageTotals } from "@maya/shared-types";
 
 export interface WebApiDeps {
   repoRoot: string;
@@ -24,10 +25,19 @@ export interface WebApiDeps {
    * in this process can be waiting on one, as in `maya web`.
    */
   conflicts?: DeferredConflictResolver;
+  /**
+   * The session's usage totals, kept up to date as events are published.
+   * Without it this route rescans the whole log on every request.
+   */
+  usage?: () => UsageTotals;
 }
 
 /** Largest request body accepted. The only POST carries one chat line. */
 const MAX_BODY_BYTES = 64 * 1024;
+
+/** Page sizes for `/api/events`. */
+const DEFAULT_EVENT_PAGE = 500;
+const MAX_EVENT_PAGE = 5000;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -117,12 +127,22 @@ async function handleApi(
 
   if (route === "/api/events" && request.method === "GET") {
     const since = Number(url.searchParams.get("since") ?? "0");
-    send(response, 200, deps.store.since(Number.isFinite(since) ? since : 0));
+    const asked = Number(url.searchParams.get("limit") ?? "");
+    // Bounded by default: the whole log was 1.1 MB at 5,000 events, and this
+    // route is reachable by anything local.
+    const limit = Number.isFinite(asked) && asked > 0 ? Math.min(asked, MAX_EVENT_PAGE) : DEFAULT_EVENT_PAGE;
+    send(response, 200, {
+      events: deps.store.since(Number.isFinite(since) ? since : 0, { limit }),
+      total: deps.store.count(),
+    });
     return;
   }
 
   if (route === "/api/usage" && request.method === "GET") {
-    send(response, 200, aggregateUsage(deps.store.since(0)));
+    // Served from the running total the daemon keeps, not a fresh scan of the
+    // log: the web client refetches this on every usage event, and scanning
+    // took 82ms at 5,000 events and grows from there.
+    send(response, 200, deps.usage ? deps.usage() : aggregateUsage(deps.store.since(0)));
     return;
   }
 
@@ -177,8 +197,13 @@ async function handleApi(
       return;
     }
     let text = "";
+    let channel: "main" | "secret" = "main";
+    let from: string | undefined;
     try {
-      text = String((JSON.parse(body) as { text?: unknown }).text ?? "").trim();
+      const parsed = JSON.parse(body) as { text?: unknown; channel?: unknown; from?: unknown };
+      text = String(parsed.text ?? "").trim();
+      if (parsed.channel === "secret") channel = "secret";
+      if (typeof parsed.from === "string" && parsed.from.trim()) from = parsed.from.trim();
     } catch {
       send(response, 400, { error: "expected JSON with a text field" });
       return;
@@ -187,9 +212,23 @@ async function handleApi(
       send(response, 400, { error: "text is required" });
       return;
     }
+    // The secret channel carries a message *from* someone to the person, so
+    // it needs a speaker. Without one there would be no way to tell who is
+    // asking, which is the only thing that makes the lane worth reading.
+    if (channel === "secret" && !from) {
+      send(response, 400, { error: "a secret-channel message needs a `from`" });
+      return;
+    }
+
     // Onto the same bus the CLI publishes to, which is what makes a line typed
     // in one interface appear in the other.
-    const event = deps.bus.publish("main", null, "user_message", { type: "user_message", text });
+    const event = from
+      ? deps.bus.publish(channel, from, "agent_message", {
+          type: "agent_message",
+          agentId: from,
+          text,
+        })
+      : deps.bus.publish("main", null, "user_message", { type: "user_message", text });
     send(response, 200, { id: event.id });
     return;
   }

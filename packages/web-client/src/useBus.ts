@@ -1,13 +1,59 @@
 import { useEffect, useRef, useState } from "react";
-import type { BusEvent, ServerMessage, ServerSignal } from "@maya/shared-types";
+import type {
+  BusEvent,
+  ConflictOption,
+  ServerMessage,
+  ServerSignal,
+} from "@maya/shared-types";
 
 export type Connection = "connecting" | "open" | "retrying";
+
+/**
+ * State the log describes but does not contain, folded in as events arrive.
+ *
+ * Deriving these by scanning `events` on every render walked the whole array
+ * once per event, which is quadratic over a session. Each event is examined
+ * once here instead.
+ */
+export interface Derived {
+  /** Bumped when the commit graph or the task list has moved on. */
+  graphMoved: number;
+  /** Bumped when the usage totals have moved on. */
+  usageMoved: number;
+  /** The question waiting for an answer, if any. */
+  conflict: { question: string; options: ConflictOption[] } | null;
+}
 
 export interface BusState {
   events: BusEvent[];
   connection: Connection;
   /** Increments on each signal, so a view can re-read what it derives. */
   signals: Record<ServerSignal, number>;
+  derived: Derived;
+}
+
+const GRAPH_CHANGING = new Set(["merge_result", "task_completed", "task_assigned"]);
+const USAGE_CHANGING = new Set(["usage", "done"]);
+
+const EMPTY: Derived = { graphMoved: 0, usageMoved: 0, conflict: null };
+
+export function foldEvent(current: Derived, event: BusEvent): Derived {
+  const payload = event.payload;
+  let next = current;
+
+  if (GRAPH_CHANGING.has(event.type)) {
+    next = { ...next, graphMoved: next.graphMoved + 1 };
+  }
+  if (USAGE_CHANGING.has(event.type)) {
+    next = { ...next, usageMoved: next.usageMoved + 1 };
+  }
+  if (payload.type === "conflict_prompt") {
+    next = { ...next, conflict: { question: payload.question, options: payload.options } };
+  }
+  if (payload.type === "conflict_resolved") {
+    next = { ...next, conflict: null };
+  }
+  return next;
 }
 
 const RETRY_MS = 1000;
@@ -24,6 +70,7 @@ export function useBus(): BusState {
   const [events, setEvents] = useState<BusEvent[]>([]);
   const [connection, setConnection] = useState<Connection>("connecting");
   const [signals, setSignals] = useState<Record<ServerSignal, number>>({ files_changed: 0 });
+  const [derived, setDerived] = useState<Derived>(EMPTY);
 
   const lastSeen = useRef(0);
 
@@ -61,6 +108,7 @@ export function useBus(): BusState {
         if (event.id <= lastSeen.current) return;
         lastSeen.current = event.id;
         setEvents((current) => [...current, event]);
+        setDerived((current) => foldEvent(current, event));
       };
 
       socket.onclose = () => {
@@ -90,5 +138,5 @@ export function useBus(): BusState {
     };
   }, []);
 
-  return { events, connection, signals };
+  return { events, connection, signals, derived };
 }
