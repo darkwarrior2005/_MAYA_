@@ -59,7 +59,11 @@ export class CopilotCliAdapter implements AgentAdapter {
   }
 
   async start(options: AgentRunOptions): Promise<AgentHandle> {
-    const allowed = this.options.allowedTools ?? COPILOT_DEFAULT_ALLOWED_TOOLS;
+    // The worker profile wins over the adapter default, so one worker can be
+    // allowed to run commands while another is limited to edits.
+    const allowed =
+      options.allowedTools ?? this.options.allowedTools ?? COPILOT_DEFAULT_ALLOWED_TOOLS;
+    const denied = options.deniedTools ?? this.options.deniedTools ?? [];
     const args = [
       "-p",
       options.prompt,
@@ -67,7 +71,7 @@ export class CopilotCliAdapter implements AgentAdapter {
       "json",
       "--no-ask-user",
       ...allowed.flatMap((pattern) => ["--allow-tool", pattern]),
-      ...(this.options.deniedTools ?? []).flatMap((pattern) => ["--deny-tool", pattern]),
+      ...denied.flatMap((pattern) => ["--deny-tool", pattern]),
     ];
     if (options.model) args.push("--model", options.model);
     if (options.resumeSessionId) args.push("--session-id", options.resumeSessionId);

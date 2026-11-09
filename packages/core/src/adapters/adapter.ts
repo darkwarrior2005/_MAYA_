@@ -14,6 +14,13 @@ export interface AgentRunOptions {
   resumeSessionId?: string;
   /** Silence budget before the watchdog declares a stall. */
   stallTimeoutSec?: number;
+  /**
+   * Per-worker tool permissions, in the underlying CLI's own pattern syntax
+   * (Copilot: `write(path?)`, `shell(cmd?)`). Set on the worker profile so one
+   * worker can be allowed to run commands while another is limited to edits.
+   */
+  allowedTools?: string[];
+  deniedTools?: string[];
 }
 
 export interface AgentRunResult {

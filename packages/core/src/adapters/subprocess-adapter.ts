@@ -46,6 +46,7 @@ export class SubprocessAgentHandle implements AgentHandle {
   private readonly listeners = new Set<AgentEventListener>();
   private readonly completion: Promise<AgentRunResult>;
   private child: ChildHandle | undefined;
+  private exited = false;
   private buffer = "";
   private usage: TokenUsage | undefined;
   private disposed = false;
@@ -86,10 +87,16 @@ export class SubprocessAgentHandle implements AgentHandle {
   private dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    try {
-      this.child?.kill();
-    } catch {
-      // already gone
+    // Killing a ConPTY that already exited makes node-pty fork a helper to
+    // enumerate console processes; it fails with "AttachConsole failed" and
+    // prints a stack trace over our output. Nothing needs killing once the
+    // child is gone.
+    if (!this.exited) {
+      try {
+        this.child?.kill();
+      } catch {
+        // already gone
+      }
     }
     this.child = undefined;
   }
@@ -151,7 +158,10 @@ export class SubprocessAgentHandle implements AgentHandle {
 
     return new Promise<AgentRunResult>((resolve, reject) => {
       child.on("error", reject);
-      child.on("close", (code) => resolve(this.finish(code ?? -1)));
+      child.on("close", (code) => {
+        this.exited = true;
+        resolve(this.finish(code ?? -1));
+      });
     });
   }
 
@@ -176,7 +186,10 @@ export class SubprocessAgentHandle implements AgentHandle {
 
     return new Promise<AgentRunResult>((resolve) => {
       pty.onData((chunk) => this.consume(chunk));
-      pty.onExit(({ exitCode }) => resolve(this.finish(exitCode)));
+      pty.onExit(({ exitCode }) => {
+        this.exited = true;
+        resolve(this.finish(exitCode));
+      });
     });
   }
 
@@ -194,8 +207,11 @@ export class SubprocessAgentHandle implements AgentHandle {
     this.dispose();
     // Exit status is not trustworthy on its own — Copilot CLI exits 0 even
     // when every tool call was denied and nothing was done — so the tool's
-    // own completion record wins when the parser produced one.
-    const ok = this.done ? this.done.ok : exitCode === 0;
+    // own completion record wins when the parser produced one. A fatal error
+    // overrides both: Copilot reports a clean result after a denied tool, and
+    // treating that as success would merge a branch where nothing happened.
+    const reportedOk = this.done ? this.done.ok : exitCode === 0;
+    const ok = reportedOk && this.fatalError === undefined;
     return {
       ok,
       stalled: false,

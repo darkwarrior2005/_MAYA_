@@ -113,10 +113,23 @@ export function makeAntigravityParser(): (line: string, agentId: string) => Agen
       if (stepType === "tool") {
         const toolName = typeof step["tool_name"] === "string" ? step["tool_name"] : "tool";
         const info = (step["tool_info"] ?? {}) as Record<string, unknown>;
-        if (state === "DONE") {
-          return [{ type: "tool_result", agentId, toolName, ok: true, output: info["result"] }];
+        if (state === "ACTIVE") {
+          return [{ type: "tool_call", agentId, toolName, input: info["parameters"] }];
         }
-        return [{ type: "tool_call", agentId, toolName, input: info["parameters"] }];
+        // A successful step carries no status field at all, so success is
+        // inferred from reaching DONE without an error rather than assumed —
+        // no failing sample was available to confirm the error shape.
+        const error = step["error"] ?? info["error"];
+        const ok = state === "DONE" && !error;
+        return [
+          {
+            type: "tool_result",
+            agentId,
+            toolName,
+            ok,
+            output: error ?? info["result"],
+          },
+        ];
       }
 
       return [];

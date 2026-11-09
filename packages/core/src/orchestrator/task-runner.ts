@@ -13,6 +13,8 @@ export interface TaskRunInput {
   summary?: string;
   agent: AgentDescriptor;
   stallTimeoutSec?: number;
+  allowedTools?: string[];
+  deniedTools?: string[];
   /** Skip the merge step and leave the work on its branch for review. */
   holdForReview?: boolean;
 }
@@ -76,6 +78,8 @@ export class TaskRunner {
         cwd: this.repo.repoRoot,
         prompt: input.instruction,
         ...(input.agent.model ? { model: input.agent.model } : {}),
+        ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),
+        ...(input.deniedTools ? { deniedTools: input.deniedTools } : {}),
       }),
       input.stallTimeoutSec,
     );

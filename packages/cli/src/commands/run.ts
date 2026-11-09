@@ -55,6 +55,8 @@ export function registerRun(program: Command): void {
         instruction,
         agent,
         stallTimeoutSec: options.timeout ? Number(options.timeout) : profile.stallTimeoutSec,
+        ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
+        ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
         ...(options.hold ? { holdForReview: true } : {}),
       });
 

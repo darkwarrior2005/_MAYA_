@@ -157,6 +157,8 @@ export class Operator {
         cwd: worktree.path,
         prompt: task.instruction,
         ...(profile.model ? { model: profile.model } : {}),
+        ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
+        ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
       }),
       profile.stallTimeoutSec,
     );

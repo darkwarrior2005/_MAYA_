@@ -10,6 +10,13 @@ export interface WorkerProfile {
   /** Seconds of silence before the liveness watchdog declares the agent stalled. */
   stallTimeoutSec: number;
   /**
+   * Tool permissions in the underlying CLI's own pattern syntax, e.g.
+   * ["write", "shell(git:*)"] for Copilot. Omitted means the adapter's
+   * conservative default (edits only, no shell).
+   */
+  allowedTools?: string[];
+  deniedTools?: string[];
+  /**
    * Off by default for the subprocess-driven tools: Copilot CLI and Antigravity
    * CLI each need a one-time interactive login and are less settled than the
    * SDK path, so a project opts into them deliberately.
@@ -48,6 +55,8 @@ export const defaultConfig = (): MayaConfig => ({
       displayName: "Worker (Copilot CLI)",
       stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
       enabled: false,
+      // Edits only. Add e.g. "shell(git:*)" to let this worker run commands.
+      allowedTools: ["write"],
     },
     {
       id: "worker-antigravity",
