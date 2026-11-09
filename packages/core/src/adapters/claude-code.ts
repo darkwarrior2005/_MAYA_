@@ -9,12 +9,32 @@ import type {
   AgentRunOptions,
   AgentRunResult,
 } from "./adapter.js";
+import { findGitBash } from "./git-bash.js";
 
 /**
  * Claude Code runs in-process through the Agent SDK rather than as a wrapped
  * subprocess: it yields typed messages directly, so there is no stdout to parse
  * and no PTY to babysit. The other adapters have no SDK equivalent.
  */
+export interface ClaudeCodeAdapterOptions {
+  /**
+   * Workers run unattended, so file edits are auto-accepted by default —
+   * 'default' would stall waiting for a prompt nobody can answer. Note this is
+   * deliberately *not* 'bypassPermissions', which would also wave through
+   * commands the agent was never meant to run.
+   */
+  permissionMode?: "default" | "acceptEdits" | "plan" | "dontAsk";
+  /** Hard stop so a confused agent cannot loop indefinitely. */
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  /**
+   * Path to an installed `claude` binary. Maya drives the CLIs a machine
+   * already has rather than carrying the SDK's ~160MB bundled copy, so this
+   * resolves from PATH by default.
+   */
+  claudeExecutable?: string;
+}
+
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = "claude-code" as const;
   readonly displayName = "Claude Code";
@@ -24,6 +44,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     resumable: true,
   };
 
+  constructor(private readonly options: ClaudeCodeAdapterOptions = {}) {}
+
   async check(): Promise<AdapterHealth> {
     const hasKey =
       Boolean(process.env["ANTHROPIC_API_KEY"]) || Boolean(process.env["CLAUDE_CODE_OAUTH_TOKEN"]);
@@ -31,6 +53,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // is sufficient but not necessary — the binary being present means auth may
     // already be set up, and only a real call could prove it either way.
     const cliOnPath = await hasClaudeCli();
+
+    if (process.platform === "win32" && !(await findGitBash())) {
+      return {
+        installed: true,
+        authenticated: false,
+        detail:
+          "git-bash not found — Claude Code needs it on Windows; install Git for Windows or set CLAUDE_CODE_GIT_BASH_PATH",
+      };
+    }
 
     if (hasKey) return { installed: true, authenticated: true, detail: "using API key from env" };
     if (cliOnPath) {
@@ -48,7 +79,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   async start(options: AgentRunOptions): Promise<AgentHandle> {
-    return new ClaudeCodeHandle(options);
+    // Set before the SDK spawns the CLI; on Windows it exits immediately
+    // without this and only explains why on stderr.
+    if (!process.env["CLAUDE_CODE_GIT_BASH_PATH"]) {
+      const bash = await findGitBash();
+      if (bash) process.env["CLAUDE_CODE_GIT_BASH_PATH"] = bash;
+    }
+
+    const executable = this.options.claudeExecutable ?? (await resolveClaudePath());
+    return new ClaudeCodeHandle(options, this.options, executable);
   }
 }
 
@@ -56,15 +95,31 @@ class ClaudeCodeHandle implements AgentHandle {
   readonly agentId: string;
   private readonly listeners = new Set<AgentEventListener>();
   private readonly abort = new AbortController();
+  private readonly stderr: string[] = [];
   private readonly stream: Query;
   private readonly completion: Promise<AgentRunResult>;
 
-  constructor(options: AgentRunOptions) {
+  constructor(
+    options: AgentRunOptions,
+    adapterOptions: ClaudeCodeAdapterOptions,
+    executable: string | null,
+  ) {
     this.agentId = options.agentId;
 
     const sdkOptions: Options = {
       cwd: options.cwd,
+      ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
       abortController: this.abort,
+      // Without this the CLI's own diagnostics are lost and a failed start
+      // reads only as "exited with code 1".
+      stderr: (data: string) => {
+        this.stderr.push(data);
+      },
+      permissionMode: adapterOptions.permissionMode ?? "acceptEdits",
+      ...(adapterOptions.maxTurns !== undefined ? { maxTurns: adapterOptions.maxTurns } : {}),
+      ...(adapterOptions.maxBudgetUsd !== undefined
+        ? { maxBudgetUsd: adapterOptions.maxBudgetUsd }
+        : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
     } as Options;
@@ -131,11 +186,35 @@ class ClaudeCodeHandle implements AgentHandle {
         error: "stream ended without a result message",
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const base = error instanceof Error ? error.message : String(error);
+      const detail = this.stderr.join("").trim();
+      const message = detail ? `${base}: ${detail}` : base;
       this.emit({ type: "error", agentId: this.agentId, message, fatal: true });
       return { ok: false, stalled: false, error: message };
     }
   }
+}
+
+/** Full path to the installed `claude`, or null to let the SDK pick. */
+async function resolveClaudePath(): Promise<string | null> {
+  const { spawn } = await import("node:child_process");
+  return new Promise((resolve) => {
+    const probe = spawn(process.platform === "win32" ? "where" : "which", ["claude"], {
+      shell: false,
+    });
+    let output = "";
+    probe.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    probe.on("error", () => resolve(null));
+    probe.on("close", (code) => {
+      if (code !== 0) return resolve(null);
+      // Prefer a real executable over a shell shim on Windows.
+      const lines = output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const exe = lines.find((l) => l.toLowerCase().endsWith(".exe")) ?? lines[0];
+      resolve(exe ?? null);
+    });
+  });
 }
 
 async function hasClaudeCli(): Promise<boolean> {
@@ -153,6 +232,12 @@ async function hasClaudeCli(): Promise<boolean> {
 function resultError(message: Extract<SDKMessage, { type: "result" }>): string {
   if ("errors" in message && Array.isArray(message.errors) && message.errors.length > 0) {
     return message.errors.join("; ");
+  }
+  // A failed run can still carry subtype 'success' with the real message in
+  // `result` (an API error, say), so reporting the subtype alone prints
+  // "success" for something that plainly failed.
+  if ("result" in message && typeof message.result === "string" && message.result.trim()) {
+    return message.result;
   }
   return message.subtype;
 }

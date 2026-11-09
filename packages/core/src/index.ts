@@ -3,6 +3,7 @@ export * from "./adapters/antigravity-cli.js";
 export * from "./adapters/build-registry.js";
 export * from "./adapters/claude-code.js";
 export * from "./adapters/copilot-cli.js";
+export * from "./adapters/git-bash.js";
 export * from "./adapters/pty-adapter.js";
 export * from "./adapters/registry.js";
 export * from "./adapters/watchdog.js";

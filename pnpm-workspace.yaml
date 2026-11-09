@@ -5,3 +5,16 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   node-pty: true
+
+# The Agent SDK ships a ~160MB bundled Claude Code binary per platform. Maya
+# exists to drive the CLIs a machine already has, so it points the SDK at the
+# installed `claude` instead of carrying a second copy.
+ignoredOptionalDependencies:
+  - "@anthropic-ai/claude-agent-sdk-win32-x64"
+  - "@anthropic-ai/claude-agent-sdk-win32-arm64"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64-musl"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64-musl"
+  - "@anthropic-ai/claude-agent-sdk-darwin-x64"
+  - "@anthropic-ai/claude-agent-sdk-darwin-arm64"
