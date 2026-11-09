@@ -58,15 +58,31 @@ split rules, scrollback windows and truncation testable without a terminal.
 
 ## Note on resizing
 
-Windows does not deliver a `resize` event on `process.stdout` under ConPTY, so
-the reported size is polled every 250ms as well; the event is kept because it
-fires immediately on Linux and macOS. A resize repaints from a cleared screen
-rather than over the last frame, because the console reflows the old lines and a
-shorter frame does not cover the rows the old one occupied.
+Under ConPTY — which is every modern Windows terminal — Node cannot see a
+resize at all. `process.stdout.columns` and `.rows` are frozen at the size the
+console had when the process started, and no `resize` event is ever emitted.
+This was verified directly: a child process kept reporting 110x30 after its
+pseudoconsole had been resized to 70x18.
 
-This is also the one thing that could not be verified mechanically: node-pty's
-pseudoconsole does not propagate its size to the child process — the child keeps
-reporting the original `columns`/`rows` and no event fires — so dragging a real
-terminal window is still a manual check. What is covered is the mechanism (a
-test changes the reported size and asserts a cleared repaint at the new width)
-and the layout's correctness at arbitrary sizes.
+So Maya measures the terminal instead of asking the OS: save the cursor, send it
+far past the bottom-right corner, ask where it ended up with `CSI 6n`, restore
+the cursor. ConPTY answers that correctly both before and after a resize, which
+is what makes the panes follow a resized window on Windows. `CSI 18 t`, the more
+direct "report text area size", is swallowed by ConPTY without an answer.
+
+The reply arrives on stdin exactly like a keystroke, so it is filtered out of
+input before anything else sees it — including when a read splits the sequence
+in two, which it will eventually, because Maya measures four times a second.
+
+The `resize` event and the polled `columns`/`rows` are both kept as the fast
+path and the fallback: the event fires immediately on Linux and macOS, and the
+polled values cover a terminal that answers neither.
+
+A resize repaints from a cleared screen rather than over the last frame, because
+the console reflows the old lines and a shorter frame does not cover the rows
+the old one occupied.
+
+This is all verified live, in both directions, by `tools/verify/panes.mjs`. The
+pseudoconsole answers the measurement itself, so nothing in that test is faked.
+Note that the harness cannot verify it by *telling* the child its size — node-pty
+never does — which is precisely why measuring is the only approach that works.

@@ -16,6 +16,12 @@ import { Screen, type ScreenIo } from "../src/tui/screen.js";
 
 const ESC = String.fromCharCode(27);
 
+/** CSI sequences plus the two-character escapes Maya writes. */
+const stripEscapes = (text: string): string =>
+  text
+    .replace(new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g"), "")
+    .replace(new RegExp(`${ESC}[0-9A-Za-z=><]`, "g"), "");
+
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
@@ -192,8 +198,9 @@ describe("PaneManager", () => {
     await eventually(() => terminal.drawn().includes("Operator"), "the first frame");
     const before = terminal.drawn().length;
 
-    // Windows delivers no "resize" event under ConPTY, so the new size is only
-    // noticed by polling what stdout reports.
+    // Windows delivers no "resize" event under ConPTY. Where the terminal
+    // does not answer a measurement either, the polled stdout values are what
+    // is left.
     terminal.resize(60, 16);
 
     await eventually(
@@ -201,12 +208,68 @@ describe("PaneManager", () => {
       "a cleared repaint at the new size",
     );
     const frame = terminal.drawn().slice(before);
-    const csi = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
     const widest = Math.max(
-      ...frame.split("\n").map((line) => line.replace(csi, "").length),
+      ...frame.split("\n").map((line) => stripEscapes(line).length),
     );
     // A frame wider than the terminal wraps and scrolls the whole screen.
     expect(widest).toBeLessThanOrEqual(60);
+  });
+
+  it("takes the size the terminal reports over the one Node reports", async () => {
+    const { daemon } = await startDaemon();
+    // Node's view is stuck at the startup size, as it is under ConPTY.
+    const terminal = fakeTerminal(200, 60);
+    const panes = new PaneManager({
+      daemonAddress: daemon.address,
+      operator: { id: OPERATOR_PANE, title: "Operator" },
+      workers: [{ id: "worker-copilot", title: "Worker" }],
+      screen: new Screen(terminal.io),
+      charset: "ascii",
+    });
+    cleanups.push(() => panes.stop());
+    void panes.start();
+
+    await eventually(() => terminal.drawn().includes("Operator"), "the first frame");
+    // Maya measures the terminal; a real terminal answers on stdin. ConPTY
+    // answers this and ignores the more direct `CSI 18 t`.
+    await eventually(() => terminal.drawn().includes(`${ESC}[6n`), "the size probe");
+
+    const before = terminal.drawn().length;
+    terminal.type(`${ESC}[24;80R`);
+
+    await eventually(
+      () => terminal.drawn().slice(before).includes(`${ESC}[2J`),
+      "a repaint at the size the terminal reported",
+    );
+    const rows = terminal.drawn().slice(before).split("\n").map(stripEscapes);
+    expect(Math.max(...rows.map((line) => line.length))).toBe(80);
+  });
+
+  it("keeps a measurement out of the prompt, even split across two reads", async () => {
+    const { daemon } = await startDaemon();
+    const terminal = fakeTerminal(100, 30);
+    const sent: string[] = [];
+    const panes = new PaneManager({
+      daemonAddress: daemon.address,
+      operator: { id: OPERATOR_PANE, title: "Operator" },
+      workers: [],
+      onUserMessage: (text) => sent.push(text),
+      screen: new Screen(terminal.io),
+      charset: "ascii",
+    });
+    cleanups.push(() => panes.stop());
+    void panes.start();
+    await eventually(() => terminal.drawn().includes("Operator"), "the first frame");
+
+    // The answer arrives in two pieces, as a real read can split it. Half of
+    // it reaching the prompt would make the view unusable, since Maya asks
+    // again every quarter second.
+    terminal.type(`${ESC}[2`);
+    terminal.type("0;90R");
+    terminal.type("add a README\r");
+
+    await eventually(() => sent.length > 0, "the typed task");
+    expect(sent).toEqual(["add a README"]);
   });
 
   it("never hands a slash command to the agents", async () => {

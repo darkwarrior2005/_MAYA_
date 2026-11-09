@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint packages --ext .ts,.tsx",
+    "verify:panes": "node tools/verify/panes.mjs",
+    "verify:live": "node tools/verify/live-run.mjs",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,md}\""
   },
   "devDependencies": {
