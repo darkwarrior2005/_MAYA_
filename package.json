@@ -16,6 +16,7 @@
     "verify:panes": "node tools/verify/panes.mjs",
     "verify:live": "node tools/verify/live-run.mjs",
     "verify:conflict": "node tools/verify/conflict.mjs",
+    "verify:width": "node tools/verify/column-width.mjs",
     "package": "node tools/package.mjs",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,md}\""
   },

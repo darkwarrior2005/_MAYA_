@@ -44,6 +44,7 @@ optional `node-pty`:
 ```bash
 node tools/verify/panes.mjs      # 23 checks in a real pseudoconsole
 node tools/verify/conflict.mjs   # a merge question in a pane, answered
+node tools/verify/column-width.mjs  # width.ts against a real terminal
 node tools/verify/live-run.mjs   # a real agent run; costs money
 node tools/verify/packaged.mjs   # the bundle, driven from an unrelated cwd
 ```
@@ -74,7 +75,7 @@ Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 
 ## Invariants
 
-Thirteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
+Fifteen rules. Breaking one of these is a correctness bug, not a style question. Most are here
 because they were broken once already.
 
 1. **The Operator alone merges.** A stalled or failed worker's branch is never
@@ -101,15 +102,24 @@ because they were broken once already.
 8. **Durable events and transient signals stay apart.** An event is a row in
    the log, replayable by id. A signal (`files_changed`) says only "re-read
    it" and is never stored.
-9. **Agent text is untrusted** for rendering: strip escape sequences before it
-   is drawn.
-10. **Every line the layout emits is exactly `cols` wide and contains no escape
-   sequences**, so a line's length is its visible width.
-11. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
+9. **The daemon checks `Origin`.** Loopback is not access control: a page on
+    any other origin can open a WebSocket to localhost and read everything,
+    and can POST cross-origin where CORS hides only the response. Both were
+    demonstrated against a running daemon before `daemon/origin.ts` existed.
+10. **Agent text is untrusted** for rendering: strip escape sequences before
+    it is drawn.
+11. **Every line the layout emits is exactly `cols` columns wide and contains
+    no escape sequences.** Columns, not characters: measure with
+    `displayWidth`, never `.length`. Where a terminal's rules are unknown,
+    err wide — a gap is harmless, a wrap scrolls the screen.
+12. **One worker runs one task at a time.** Workers run in parallel, but a
+    worker with several tasks works through them in order: concurrent runs of
+    one agent share a log file, a pane and a context snapshot.
+13. **`.maya/` is excluded via `.git/info/exclude`**, never the user's own
     `.gitignore`.
-12. **Context snapshots are written temp-then-rename with retries**, and a
+14. **Context snapshots are written temp-then-rename with retries**, and a
     failed snapshot logs and skips rather than crashing the daemon.
-13. **Recovery never deletes a worktree.** A daemon that crashed mid-run
+15. **Recovery never deletes a worktree.** A daemon that crashed mid-run
     leaves uncommitted agent work in one; recovery reports it and prunes only
     metadata for directories that are already gone.
 

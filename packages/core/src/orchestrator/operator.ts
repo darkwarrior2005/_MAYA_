@@ -72,9 +72,7 @@ export class Operator {
       this.deps.queue.add(firstLine(instruction), instruction),
     );
 
-    const outcomes = await Promise.all(
-      tasks.map((task, index) => this.dispatch(task, this.workerFor(index), base)),
-    );
+    const outcomes = await this.dispatchAll(tasks, base);
 
     const merged: string[] = [];
     const held: string[] = [];
@@ -124,6 +122,40 @@ export class Operator {
     const workers = this.deps.workers;
     if (workers.length === 0) throw new Error("no workers configured");
     return workers[index % workers.length] as WorkerProfile;
+  }
+
+  /**
+   * Workers run in parallel; each worker runs its own tasks one at a time.
+   *
+   * Handing every task out at once meant a worker with more tasks than
+   * colleagues ran them simultaneously — observed with one worker and three
+   * tasks, all three started before any finished. They then share one raw log
+   * file, one pane and one `latest.md` snapshot, so two of the three
+   * snapshots are overwritten and the log of all three is interleaved.
+   *
+   * Outcomes come back in the order the tasks were given, not the order they
+   * happened to finish, so the merge order is the order the user asked for.
+   */
+  private async dispatchAll(tasks: TaskSpec[], base: string): Promise<WorkerOutcome[]> {
+    const lanes = new Map<number, Array<{ position: number; task: TaskSpec }>>();
+    tasks.forEach((task, position) => {
+      const lane = position % this.deps.workers.length;
+      const queue = lanes.get(lane) ?? [];
+      queue.push({ position, task });
+      lanes.set(lane, queue);
+    });
+
+    const done: Array<{ position: number; outcome: WorkerOutcome }> = [];
+    await Promise.all(
+      [...lanes.entries()].map(async ([lane, queued]) => {
+        const worker = this.workerFor(lane);
+        for (const { position, task } of queued) {
+          done.push({ position, outcome: await this.dispatch(task, worker, base) });
+        }
+      }),
+    );
+
+    return done.sort((a, b) => a.position - b.position).map((entry) => entry.outcome);
   }
 
   private async dispatch(

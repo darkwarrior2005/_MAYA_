@@ -69,6 +69,20 @@ resize. So Maya measures the terminal: save cursor, move to `[999;999H`, ask
 arrives on stdin like a keystroke and must be filtered out of user input,
 including when a read splits it in two.
 
+**ConPTY does not do grapheme clustering.** Measured by printing into a
+pseudoconsole and asking where the cursor landed
+(`tools/verify/column-width.mjs`): a regional-indicator flag advances 4
+columns, a ZWJ family 8, and a combining accent 1 of its own. It does absorb a
+variation selector, so U+26A0 is 1 column and U+26A0 U+FE0F is 2. Terminals
+that cluster would draw those narrower, so `width.ts` matches ConPTY and
+over-estimates elsewhere — **over-estimating leaves a gap at the end of a
+line, under-estimating wraps it and scrolls the screen.**
+
+**Width is columns, not characters.** Counting code points made
+"done OK shipped ROCKET ok" 42 columns in a 40-column frame. And the wide set
+is not a block: U+2713 check mark is narrow while U+2705 heavy check mark is
+wide, so a blanket range over the symbol block is wrong in both directions.
+
 **Agent output may contain escape sequences.** They repaint parts of the screen
 Maya did not draw, and they count toward a line's length while occupying no
 columns, which silently mis-sizes every pane on the row. Stripped in the layout
@@ -93,6 +107,13 @@ the whole event log, secret channel included, and posted a message that landed
 in it. The daemon now checks `Origin` on both paths. A request with no Origin
 is allowed, because that is the CLI or a script, which can read
 `.maya/state.db` directly anyway.
+
+**The Operator gave one worker several tasks at once.** Tasks were handed out
+with `Promise.all` over a round-robin, so a worker with more tasks than
+colleagues ran them simultaneously — three tasks, one worker, all three
+started before any finished. They then shared one raw log file, one pane and
+one `latest.md`, so two snapshots were overwritten. Workers now run in
+parallel while each runs its own queue one at a time.
 
 **A row written to the event store from outside the daemon reaches nobody, and
 is skipped permanently.** The daemon's in-process emitter is what pushes to

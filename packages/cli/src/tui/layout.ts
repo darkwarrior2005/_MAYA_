@@ -1,3 +1,5 @@
+import { displayWidth, takeColumns } from "./width.js";
+
 /**
  * The pane layout is a pure function: state plus a terminal size in, a grid of
  * plain strings out. Nothing here touches stdout, so the whole tmux-style
@@ -216,19 +218,29 @@ function header(pane: PaneView, width: number, g: Glyphs): string {
   return `${left}${g.h.repeat(fillWidth)}${right}`;
 }
 
-/** Scroll bar glyphs and box characters are all single-width here. */
-function visible(text: string): number {
-  return [...text].length;
-}
+/** Columns a terminal advances for this text, not characters. */
+const visible = displayWidth;
 
-/** Pads or truncates to exactly `width`, marking a truncation with `cut`. */
+/**
+ * Pads or truncates to exactly `width` columns, marking a truncation with
+ * `cut`.
+ *
+ * Measured in columns rather than characters, because a terminal advances two
+ * for CJK and for emoji. Truncation stops before a double-width cluster
+ * rather than splitting it, which can leave one column spare; that column is
+ * padded, so the result is still exactly `width` wide.
+ */
 export function fit(text: string, width: number, cut = "…"): string {
   if (width <= 0) return "";
-  const chars = [...plain(text).replace(/[\n\t]/g, " ")];
-  if (chars.length === width) return text;
-  if (chars.length < width) return text + " ".repeat(width - chars.length);
-  if (width === 1) return cut;
-  return `${chars.slice(0, width - 1).join("")}${cut}`;
+  const clean = plain(text).replace(/[\n\t]/g, " ");
+  const total = displayWidth(clean);
+  if (total === width) return clean;
+  if (total < width) return clean + " ".repeat(width - total);
+
+  const cutWidth = displayWidth(cut);
+  if (width <= cutWidth) return " ".repeat(width);
+  const head = takeColumns(clean, width - cutWidth);
+  return `${head.text}${cut}${" ".repeat(width - cutWidth - head.width)}`;
 }
 
 /**
@@ -294,10 +306,13 @@ export function wrapText(text: string, width: number): string[] {
         continue;
       }
 
+      // Break by columns so a double-width cluster is never split in half.
       let rest = word;
       while (visible(rest) > width) {
-        out.push([...rest].slice(0, width).join(""));
-        rest = [...rest].slice(width).join("");
+        const piece = takeColumns(rest, width);
+        if (piece.text === "") break;
+        out.push(piece.text);
+        rest = piece.rest;
       }
       line = rest;
     }
