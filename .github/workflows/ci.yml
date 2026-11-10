@@ -32,9 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `version:` here. The action reads `packageManager` from
+      # package.json, and giving it both is a hard error — "Multiple versions
+      # of pnpm specified" — which killed both legs of the first run before
+      # anything was installed. One source of truth, and it is the one pnpm
+      # already enforces locally.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - uses: actions/setup-node@v4
         with:
