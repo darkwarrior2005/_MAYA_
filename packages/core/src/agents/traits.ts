@@ -65,7 +65,10 @@ export function knownPros(tool: AgentToolId, probes: ProbeResult[]): string[] {
 export function knownCons(tool: AgentToolId, probes: ProbeResult[]): string[] {
   const cons = [...(STATIC_CONS[tool] ?? [])];
   for (const probe of probes) {
-    if (probe.outcome !== "fail") continue;
+    // A warning belongs here too — a shim is worth knowing about even though
+    // it is not a failure — but a skipped probe measured nothing, and putting
+    // "not measured" in a weaknesses list reads as a weakness.
+    if (probe.outcome !== "fail" && probe.outcome !== "warn") continue;
     if (probe.id === "installed") cons.unshift("Not installed on this machine");
     else if (probe.id === "authenticated") cons.unshift("Installed, but not logged in");
     else if (probe.id === "binary") cons.unshift(`Resolved to a shim: ${probe.detail}`);

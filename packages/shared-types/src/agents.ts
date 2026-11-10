@@ -1,7 +1,16 @@
 import type { AgentToolId } from "./index.js";
 
-/** How a probe went. `skipped` means it needed something that was not there. */
-export type ProbeOutcome = "pass" | "fail" | "skipped";
+/**
+ * How a probe went.
+ *
+ * `skipped` means it needed something that was not there — including a live
+ * probe whose answer would be meaningless because the run it depends on
+ * failed. `warn` is for something worth telling the person about that is not
+ * a failure: the first live run found a VS Code `copilot` shim and marked it
+ * FAIL, and then the tool worked perfectly through that shim. A caution is
+ * not a failure, and scoring it as one made the card lie.
+ */
+export type ProbeOutcome = "pass" | "warn" | "fail" | "skipped";
 
 export interface ProbeResult {
   id: string;

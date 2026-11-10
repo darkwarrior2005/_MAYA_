@@ -1055,8 +1055,22 @@ p.error {
   background: var(--ok);
 }
 
+.probe-warn .mark {
+  background: var(--warn);
+}
+
 .probe-fail .mark {
   background: var(--error);
+}
+
+/* A bar with no measurement behind it. The figure already carries a "?"; this
+   keeps it from reading as a middling score. */
+.stat-unmeasured .fill {
+  opacity: 0.25;
+}
+
+.stat-unmeasured .figure {
+  color: var(--muted);
 }
 
 .probe p {

@@ -53,7 +53,7 @@ export function createGoodAgent() {
   };
 }
 
-/** Edits whatever it likes, and never says what it spent. */
+/** Does the task, then edits whatever else it likes, and never says what it spent. */
 export function createRecklessAgent() {
   return {
     ...base("reckless-agent", "Reckless Agent"),
@@ -65,9 +65,36 @@ export function createRecklessAgent() {
         async waitForCompletion() {
           const { writeFileSync } = await import("node:fs");
           const { join } = await import("node:path");
-          // Writes something regardless of what it was told.
+          const asked = /Create a file called (\\S+)/.exec(run.prompt);
+          if (asked) writeFileSync(join(run.cwd, asked[1]), "fine\\n", "utf8");
+          // ...and then writes something regardless of what it was told.
           writeFileSync(join(run.cwd, "UNASKED.txt"), "I did this anyway\\n", "utf8");
           return { ok: true, stalled: false };
+        },
+        async interrupt() {}, async kill() {},
+      };
+    },
+  };
+}
+
+/**
+ * Never gets going: its credentials are no good. This is the shape the first
+ * real live run took, and it is the one that caught Maya flattering a tool —
+ * a fast failure scored as speed, and an empty bill scored as cost reporting.
+ */
+export function createExpiredAgent() {
+  return {
+    ...base("expired-agent", "Expired Agent"),
+    async start(run) {
+      const listeners = new Set();
+      return {
+        agentId: run.agentId,
+        onEvent(l) { listeners.add(l); return () => listeners.delete(l); },
+        async waitForCompletion() {
+          for (const l of listeners) {
+            l({ type: "usage", agentId: run.agentId, usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } });
+          }
+          return { ok: false, stalled: false, error: "Failed to authenticate: OAuth session expired" };
         },
         async interrupt() {}, async kill() {},
       };
@@ -96,6 +123,7 @@ const config = JSON.parse(readFileSync(configFile, "utf8"));
 config.adapters = [
   { id: "good-agent", module: "./plugins/stand-ins.mjs", export: "createGoodAgent" },
   { id: "reckless-agent", module: "./plugins/stand-ins.mjs", export: "createRecklessAgent" },
+  { id: "expired-agent", module: "./plugins/stand-ins.mjs", export: "createExpiredAgent" },
 ];
 config.workers = [
   { id: "w-good", tool: "good-agent", displayName: "Good", stallTimeoutSec: 30, enabled: true },
@@ -115,8 +143,9 @@ check("it warns that this spends money", live.out.includes("spends money"));
 const report = JSON.parse(readFileSync(join(project, ".maya", "agents-report.json"), "utf8"));
 const good = report.agents.find((agent) => agent.tool === "good-agent");
 const reckless = report.agents.find((agent) => agent.tool === "reckless-agent");
+const expired = report.agents.find((agent) => agent.tool === "expired-agent");
 
-check("both stand-ins were scored", Boolean(good && reckless));
+check("every stand-in was scored", Boolean(good && reckless && expired));
 
 const probeOf = (agent, id) => agent.probes.find((probe) => probe.id === id);
 
@@ -154,6 +183,42 @@ check(
   good.stats.reliability !== reckless.stats.reliability,
   `good ${good.stats.reliability} vs reckless ${reckless.stats.reliability}`,
 );
+// --- a run that failed must not be flattered ---------------------------------
+// Everything below came out of the first real live run, where an agent whose
+// login had expired was scored the fastest of the three and credited with
+// reporting what it spent.
+check(
+  "a failed run is not scored as a speed",
+  probeOf(expired, "speed")?.outcome === "skipped",
+  probeOf(expired, "speed")?.detail,
+);
+check(
+  "the speed bar stays unmeasured after a failed run",
+  expired.stats.speed === 50,
+  `speed ${expired.stats.speed}`,
+);
+check(
+  "a failed run does not beat a working one on speed",
+  good.stats.speed >= expired.stats.speed,
+  `good ${good.stats.speed} vs expired ${expired.stats.speed}`,
+);
+check(
+  "an all-zero bill is not evidence that it reports cost",
+  probeOf(expired, "reports-cost")?.outcome === "skipped",
+  probeOf(expired, "reports-cost")?.detail,
+);
+check(
+  "a run that never started is not credited with restraint",
+  probeOf(expired, "restraint")?.outcome === "skipped",
+  probeOf(expired, "restraint")?.detail,
+);
+check(
+  "an expired login is not reported as a permissions problem",
+  probeOf(expired, "can-edit")?.detail.includes("Log in again") === true &&
+    probeOf(expired, "can-edit")?.detail.includes("grants edits only") === false,
+  probeOf(expired, "can-edit")?.detail,
+);
+
 check("the report records that it was live", report.live === true);
 check(
   "platform notes are included",

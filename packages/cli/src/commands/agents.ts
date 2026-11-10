@@ -62,11 +62,20 @@ function printSummary(report: AgentReport, file: string): void {
   console.log("");
   for (const agent of report.agents) {
     const ran = agent.probes.filter((probe) => probe.outcome !== "skipped");
-    const passed = ran.filter((probe) => probe.outcome === "pass").length;
+    const passed = ran.filter(
+      (probe) => probe.outcome === "pass" || probe.outcome === "warn",
+    ).length;
     console.log(`${agent.displayName}  ${passed}/${ran.length} checks`);
     console.log(`  ${agent.tagline}`);
     for (const probe of agent.probes) {
-      const mark = probe.outcome === "pass" ? "ok  " : probe.outcome === "fail" ? "FAIL" : "skip";
+      const mark =
+        probe.outcome === "pass"
+          ? "ok  "
+          : probe.outcome === "warn"
+            ? "warn"
+            : probe.outcome === "fail"
+              ? "FAIL"
+              : "skip";
       console.log(`  ${mark} ${probe.title} — ${probe.detail}`);
     }
     console.log("");

@@ -183,6 +183,33 @@ then, treat an Antigravity worker as the least trustworthy of the three.
 
 **Effort.** An hour, mostly waiting on the CLI.
 
+### B4 — The probes credited a run that never happened — **FIXED**
+
+**Evidence.** The first real `maya agents --live` run, 10 November 2026, on
+this machine. Claude Code's OAuth session had expired. It came out of that
+run **the fastest of the three agents** (1.5s — it failed immediately), was
+credited with reporting what it spent (a `usage` event of all zeros), and was
+credited with leaving the tree alone (it had not got far enough to touch
+anything). Copilot, meanwhile, was marked **FAIL** for resolving to the VS
+Code shim, and then wrote the file through that shim in 11.5s.
+
+**Impact.** The Agents page existed precisely so nobody has to take an
+opinion on trust. A card that crowns a tool for failing quickly is worse than
+no card.
+
+**Fix, applied.** Every live probe whose answer depends on the run having
+happened now reports `skipped` when it did not, and `scoreFrom` leaves the
+corresponding bar unmeasured instead of full. `ProbeOutcome` gained `warn`
+for a finding that is a caution rather than a failure, which is what a shim
+is. The error is classified before it is reported, so an expired login no
+longer prints the advice about permissions. Six checks in
+`tools/verify/agents.mjs` hold this down, driven by an `expired-agent`
+stand-in that reproduces the exact shape.
+
+**What the figures actually were.** Copilot CLI 8/9, wrote the file in 11.5s,
+30,551 tokens, obeyed "change nothing". Antigravity CLI 9/9, 54.9s, 41,284
+tokens, obeyed. Claude Code untested: log in and re-run.
+
 ---
 
 ## C. Platform and verification

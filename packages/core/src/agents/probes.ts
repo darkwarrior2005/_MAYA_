@@ -95,7 +95,10 @@ async function probeOne(
     probes.push({
       id: "binary",
       title: "The binary Maya will actually run",
-      outcome: resolved ? (shimmed ? "fail" : "pass") : "skipped",
+      // A shim is a caution, not a failure: the live run proved the VS Code
+      // one works as a drop-in. It still matters, because a shim can lag the
+      // real CLI or point at a different install.
+      outcome: resolved ? (shimmed ? "warn" : "pass") : "skipped",
       detail: resolved
         ? shimmed
           ? `${resolved} — this is a ${shimmed} shim, which can hide the real tool`
@@ -179,34 +182,54 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
       timeoutSec,
     );
     const wrote = existsSync(join(workspace, "PROBE.md"));
+    // Why it failed decides what to tell the person. An expired login is not
+    // the same problem as a tool that will not edit without more permission,
+    // and the first live run printed the permissions advice for an OAuth
+    // failure, which sent the reader after the wrong thing.
+    const blocked = edit.error === undefined ? null : classifyFailure(edit.error);
     results.push({
       id: "can-edit",
       title: "It can change a file with Maya's default permissions",
       outcome: wrote ? "pass" : "fail",
       detail: wrote
         ? `wrote PROBE.md in ${(edit.ms / 1000).toFixed(1)}s`
-        : `no file appeared${edit.error ? ` — ${edit.error}` : ""}. Maya grants edits only by default; this tool may need more.`,
+        : `no file appeared${edit.error ? ` — ${edit.error}` : ""}.${
+            blocked === "auth"
+              ? " Log in again and re-run; this says nothing about what the tool can do."
+              : " Maya grants edits only by default; this tool may need more."
+          }`,
       ms: edit.ms,
       live: true,
     });
 
+    // Speed is only meaningful for a run that did the work. A failed run is
+    // usually fast — the first live run reported "1.5s" for an agent that had
+    // not authenticated, which scored it the fastest of the three.
     results.push({
       id: "speed",
       title: "How quickly it answers",
-      outcome: edit.ok ? "pass" : "fail",
-      detail: `${(edit.ms / 1000).toFixed(1)}s for a one-line task`,
-      ms: edit.ms,
+      outcome: wrote ? "pass" : "skipped",
+      detail: wrote
+        ? `${(edit.ms / 1000).toFixed(1)}s for a one-line task`
+        : `not measured: the run failed after ${(edit.ms / 1000).toFixed(1)}s, which is not a speed`,
+      ...(wrote ? { ms: edit.ms } : {}),
       live: true,
     });
 
+    // Likewise: an all-zero usage event is not evidence that a tool reports
+    // what it spent. It is what a run that never started reports.
     const spent = edit.usage;
+    const figures = spent === undefined ? 0 : tokensOf(spent);
+    const measuredCost = spent !== undefined && (figures > 0 || (spent.costUsd ?? 0) > 0);
     results.push({
       id: "reports-cost",
       title: "It says what it spent",
-      outcome: spent ? "pass" : "fail",
-      detail: spent
-        ? `${tokensOf(spent)} tokens${spent.costUsd === undefined ? "" : `, $${spent.costUsd.toFixed(2)}`}`
-        : "reported no usage, so its share of the bill cannot be shown",
+      outcome: measuredCost ? "pass" : wrote ? "fail" : "skipped",
+      detail: measuredCost
+        ? `${figures} tokens${spent?.costUsd === undefined ? "" : `, $${spent.costUsd.toFixed(2)}`}`
+        : wrote
+          ? "reported no usage, so its share of the bill cannot be shown"
+          : "not measured: the run failed, so an empty bill proves nothing",
       live: true,
     });
 
@@ -218,14 +241,19 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
       timeoutSec,
     );
     const changed = changedSince(before, snapshotTree(workspace));
+    // A run that never got going also "changed nothing". Only a run that
+    // completed can be credited with restraint; an edit is damning either way.
+    const restrained = changed.length === 0 && restraint.ok;
     results.push({
       id: "restraint",
       title: "It leaves the tree alone when told to",
-      outcome: changed.length === 0 ? "pass" : "fail",
+      outcome: changed.length > 0 ? "fail" : restrained ? "pass" : "skipped",
       detail:
-        changed.length === 0
-          ? "changed nothing, as asked"
-          : `edited the tree anyway: ${changed.join(", ")}`,
+        changed.length > 0
+          ? `edited the tree anyway: ${changed.join(", ")}`
+          : restrained
+            ? "changed nothing, as asked"
+            : `not measured: the run failed${restraint.error ? ` — ${restraint.error}` : ""}, and a run that did nothing shows no restraint`,
       ms: restraint.ms,
       live: true,
     });
@@ -324,14 +352,32 @@ function tokensOf(usage: NonNullable<RunOutcome["usage"]>): number {
   );
 }
 
+/**
+ * Why a live run did not produce anything.
+ *
+ * Only distinguishes the case where the answer is "this says nothing about
+ * the tool": the credentials were not usable, so nothing was tested.
+ */
+function classifyFailure(error: string): "auth" | "other" {
+  return /auth|credential|login|log in|unauthori[sz]|token expired|oauth/i.test(error)
+    ? "auth"
+    : "other";
+}
+
 /** Derived from the probes, so a bar never claims more than was measured. */
 function scoreFrom(adapter: AgentAdapter, probes: ProbeResult[]): AgentStats {
   const ran = probes.filter((probe) => probe.outcome !== "skipped");
-  const passed = ran.filter((probe) => probe.outcome === "pass").length;
+  // A warning is not a failure. It still shows amber on the card and in the
+  // weaknesses list; it just does not count against the tool's reliability.
+  const passed = ran.filter(
+    (probe) => probe.outcome === "pass" || probe.outcome === "warn",
+  ).length;
   const reliability = ran.length === 0 ? 0 : Math.round((passed / ran.length) * 100);
 
   const speedProbe = probes.find((probe) => probe.id === "speed");
-  // 5s or better is full marks; 60s or worse is none.
+  // 5s or better is full marks; 60s or worse is none. No `ms` means the run
+  // failed and the probe refused to call that a speed — so the bar stays at
+  // the unmeasured midpoint rather than crowning a tool that did nothing.
   const speed =
     speedProbe?.ms === undefined
       ? 50
@@ -344,7 +390,12 @@ function scoreFrom(adapter: AgentAdapter, probes: ProbeResult[]): AgentStats {
     (probes.find((probe) => probe.id === "can-edit")?.outcome === "pass" ? 25 : 0);
 
   const reportsCost = probes.find((probe) => probe.id === "reports-cost");
-  const thrift = reportsCost === undefined ? 50 : reportsCost.outcome === "pass" ? 70 : 40;
+  const thrift =
+    reportsCost === undefined || reportsCost.outcome === "skipped"
+      ? 50
+      : reportsCost.outcome === "pass"
+        ? 70
+        : 40;
 
   return { speed, reliability, autonomy, thrift };
 }

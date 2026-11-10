@@ -93,7 +93,16 @@ function CharacterCard({
 }): ReactElement {
   const state = !agent.installed ? "absent" : !agent.authenticated ? "locked" : "ready";
   const ran = agent.probes.filter((probe) => probe.outcome !== "skipped");
-  const passed = ran.filter((probe) => probe.outcome === "pass").length;
+  const passed = ran.filter(
+    (probe) => probe.outcome === "pass" || probe.outcome === "warn",
+  ).length;
+  // A bar is only honest if the probe behind it produced a figure. A failed
+  // live run leaves speed and thrift unmeasured, and the card must say so
+  // rather than show the midpoint as though it were a measurement.
+  const measured = (id: string): boolean => {
+    const probe = agent.probes.find((candidate) => candidate.id === id);
+    return probe !== undefined && probe.outcome !== "skipped";
+  };
 
   return (
     <article
@@ -114,10 +123,14 @@ function CharacterCard({
       </div>
 
       <dl className="stats">
-        <Stat label="Speed" value={agent.stats.speed} measured={agent.live} />
+        <Stat label="Speed" value={agent.stats.speed} measured={agent.live && measured("speed")} />
         <Stat label="Reliability" value={agent.stats.reliability} measured />
         <Stat label="Autonomy" value={agent.stats.autonomy} measured />
-        <Stat label="Thrift" value={agent.stats.thrift} measured={agent.live} />
+        <Stat
+          label="Thrift"
+          value={agent.stats.thrift}
+          measured={agent.live && measured("reports-cost")}
+        />
       </dl>
 
       <div className="sides">
@@ -166,10 +179,16 @@ function Stat({
   measured: boolean;
 }): ReactElement {
   return (
-    <div className="stat">
+    <div className={`stat${measured ? "" : " stat-unmeasured"}`}>
       <dt>{label}</dt>
       <dd>
-        <span className="bar" role="img" aria-label={`${label} ${value} of 100`}>
+        <span
+          className="bar"
+          role="img"
+          aria-label={
+            measured ? `${label} ${value} of 100` : `${label} not measured on this machine`
+          }
+        >
           <span className="fill" style={{ width: `${value}%` }} />
         </span>
         <span className="figure">

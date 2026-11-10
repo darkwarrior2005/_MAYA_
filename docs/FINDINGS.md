@@ -203,6 +203,28 @@ stale copy points at a bundle that is gone. `no-cache` was not enough in
 practice; it is `no-store` now, and the content-addressed assets are cached
 hard instead.
 
+**A failed run is fast, reports no tokens and changes nothing — and the first
+version of the probes scored all three as virtues.** The first real `--live`
+run hit a Claude Code whose OAuth session had expired. It came out of that run
+*the fastest of the three agents* (1.5s, because it failed immediately), was
+credited with reporting what it spent (a `usage` event of all zeros), and was
+credited with restraint (it had not got as far as touching anything). Every
+live probe whose answer depends on the run having happened now reports
+`skipped` when it did not, which leaves the bar unmeasured rather than full.
+The lesson generalises: a probe must ask whether the thing it measures was
+*possible*, not just read the number it got back.
+
+**A shim is a caution, not a failure.** The same run resolved `copilot` to the
+VS Code shim, marked it FAIL — and then the tool worked perfectly through that
+shim. `ProbeOutcome` has a `warn` for this. It still reaches the weaknesses
+list, because a shim can lag the real CLI, but it no longer costs the tool a
+check it passed.
+
+**Say which failure it was.** "No file appeared, Maya grants edits only by
+default" sends the reader after permissions when the real answer is `claude
+login`. The probe classifies the error first and says "log in again; this says
+nothing about what the tool can do".
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in
