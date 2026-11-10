@@ -78,6 +78,8 @@ export class CopilotCliAdapter implements AgentAdapter {
     return {
       installed: true,
       authenticated: true,
+      // A token in the environment is a fact; a stored login is a hope.
+      verified: hasToken,
       detail: hasToken
         ? "using token from env"
         : "assumes credentials from a prior `copilot login` (not verified)",

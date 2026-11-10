@@ -206,9 +206,18 @@ longer prints the advice about permissions. Six checks in
 `tools/verify/agents.mjs` hold this down, driven by an `expired-agent`
 stand-in that reproduces the exact shape.
 
-**What the figures actually were.** Copilot CLI 8/9, wrote the file in 11.5s,
-30,551 tokens, obeyed "change nothing". Antigravity CLI 9/9, 54.9s, 41,284
-tokens, obeyed. Claude Code untested: log in and re-run.
+**What the figures actually were.** Copilot CLI 9/9, wrote the file in 11.4s,
+30,566 tokens, obeyed "change nothing". Antigravity CLI 9/9, 60.1s, 41,290
+tokens, obeyed. Claude Code 4/5 static, every live probe skipped: log in and
+re-run.
+
+**Two more the same run exposed.** "Logged in" was a pass for all three while
+none of them can actually check it — the expired Claude Code session passed
+that probe twice. `AdapterHealth` carries `verified` now, and an assumed login
+is amber. And the speed scale bottomed out at 60s, so Antigravity's working
+60.1s run scored **0**; the floor is the probe timeout now, where 0 means
+"only just finished in time". Three more checks in
+`tools/verify/agents.mjs`, 24/24.
 
 ---
 

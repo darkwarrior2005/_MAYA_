@@ -225,6 +225,20 @@ default" sends the reader after permissions when the real answer is `claude
 login`. The probe classifies the error first and says "log in again; this says
 nothing about what the tool can do".
 
+**"Logged in" is a guess for every one of these tools.** None offers a cheap
+way to ask whether stored credentials are still good — only a real call
+settles it, which is why the detail lines all said "(not verified)" while the
+check reported a pass. The expired Claude Code session passed it twice.
+`AdapterHealth` now carries `verified`, and an assumed login is amber rather
+than green. A token in the environment is a fact and stays green.
+
+**A score whose floor sits on the observed value is a guessed score.** Speed
+ran 5s → 100, 60s → 0, picked before anyone had run the probes. Antigravity
+then finished a one-line task in 60.1s and scored **0**, which reads as broken
+for a run that worked. The floor is the probe timeout now, so 0 means "only
+just finished inside the time it was given" — a statement about something,
+rather than about where the scale happened to end.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

@@ -61,6 +61,16 @@ export interface AgentAdapter {
 export interface AdapterHealth {
   installed: boolean;
   authenticated: boolean;
+  /**
+   * Whether `authenticated` was proven rather than assumed.
+   *
+   * None of the wrapped tools offer a cheap way to ask "are my credentials
+   * still good?" — only a real call settles it. So `authenticated: true` with
+   * `verified: false` means "nothing says otherwise", which is weaker than it
+   * reads. The first live run found a Claude Code whose stored OAuth session
+   * had expired while this check reported it as logged in.
+   */
+  verified?: boolean;
   version?: string;
   detail?: string;
 }

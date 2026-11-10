@@ -46,6 +46,7 @@ export class AntigravityCliAdapter implements AgentAdapter {
     return {
       installed: true,
       authenticated: true,
+      verified: false,
       detail: "assumes cached credentials from a prior interactive `agy` login (not verified)",
     };
   }

@@ -79,10 +79,20 @@ async function probeOne(
     live: false,
   });
 
+  // "Logged in" is a pass only where it was proven. Where it was assumed from
+  // a stored session it is amber: the first live run had this reporting a
+  // Claude Code login as good while the OAuth session behind it had expired.
+  const authOutcome = !health.installed
+    ? "skipped"
+    : !health.authenticated
+      ? "fail"
+      : health.verified === false
+        ? "warn"
+        : "pass";
   probes.push({
     id: "authenticated",
     title: "It has credentials to work with",
-    outcome: health.installed ? (health.authenticated ? "pass" : "fail") : "skipped",
+    outcome: authOutcome,
     detail: health.installed
       ? (health.detail ?? "reported as authenticated")
       : "not installed, so there was nothing to check",
@@ -152,7 +162,7 @@ async function probeOne(
     probes,
     pros: knownPros(adapter.id, probes),
     cons: knownCons(adapter.id, probes),
-    stats: scoreFrom(adapter, probes),
+    stats: scoreFrom(adapter, probes, options.timeoutSec ?? DEFAULT_TIMEOUT_SEC),
     checkedAt: new Date().toISOString(),
     live: options.live === true,
   };
@@ -365,7 +375,11 @@ function classifyFailure(error: string): "auth" | "other" {
 }
 
 /** Derived from the probes, so a bar never claims more than was measured. */
-function scoreFrom(adapter: AgentAdapter, probes: ProbeResult[]): AgentStats {
+function scoreFrom(
+  adapter: AgentAdapter,
+  probes: ProbeResult[],
+  timeoutSec: number,
+): AgentStats {
   const ran = probes.filter((probe) => probe.outcome !== "skipped");
   // A warning is not a failure. It still shows amber on the card and in the
   // weaknesses list; it just does not count against the tool's reliability.
@@ -375,13 +389,20 @@ function scoreFrom(adapter: AgentAdapter, probes: ProbeResult[]): AgentStats {
   const reliability = ran.length === 0 ? 0 : Math.round((passed / ran.length) * 100);
 
   const speedProbe = probes.find((probe) => probe.id === "speed");
-  // 5s or better is full marks; 60s or worse is none. No `ms` means the run
-  // failed and the probe refused to call that a speed — so the bar stays at
-  // the unmeasured midpoint rather than crowning a tool that did nothing.
+  // 5s or better is full marks; zero means it took as long as it was allowed.
+  //
+  // The floor used to be a flat 60s, picked out of the air before anyone had
+  // run this: Antigravity then came in at 60.1s on a one-line task and scored
+  // 0, which reads as broken for a run that worked. Tying the floor to the
+  // timeout gives the number a meaning — 0 is "only just finished in time".
+  const floorMs = Math.max(10_000, timeoutSec * 1000);
   const speed =
     speedProbe?.ms === undefined
       ? 50
-      : Math.max(0, Math.min(100, Math.round(100 - ((speedProbe.ms - 5000) / 55_000) * 100)));
+      : Math.max(
+          0,
+          Math.min(100, Math.round(100 - ((speedProbe.ms - 5000) / (floorMs - 5000)) * 100)),
+        );
 
   const autonomy =
     (adapter.capabilities.streaming ? 25 : 0) +

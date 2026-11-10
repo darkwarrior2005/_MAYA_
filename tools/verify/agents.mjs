@@ -85,6 +85,11 @@ export function createRecklessAgent() {
 export function createExpiredAgent() {
   return {
     ...base("expired-agent", "Expired Agent"),
+    // Reports itself logged in, because a stored session looks fine until it
+    // is used. This is what the real Claude Code did.
+    async check() {
+      return { installed: true, authenticated: true, verified: false, detail: "stored session (not verified)" };
+    },
     async start(run) {
       const listeners = new Set();
       return {
@@ -217,6 +222,23 @@ check(
   probeOf(expired, "can-edit")?.detail.includes("Log in again") === true &&
     probeOf(expired, "can-edit")?.detail.includes("grants edits only") === false,
   probeOf(expired, "can-edit")?.detail,
+);
+
+check(
+  "an unproven login is amber, not a pass",
+  probeOf(expired, "authenticated")?.outcome === "warn",
+  probeOf(expired, "authenticated")?.detail,
+);
+check(
+  "and it says so in the weaknesses, not 'not logged in'",
+  expired.cons.some((con) => con.includes("assumed, not checked")),
+  expired.cons.find((con) => con.includes("assumed")),
+);
+check(
+  "a warning does not count against reliability like a failure",
+  expired.stats.reliability > 0 &&
+    probeOf(good, "authenticated")?.outcome === "pass",
+  `expired ${expired.stats.reliability}`,
 );
 
 check("the report records that it was live", report.live === true);

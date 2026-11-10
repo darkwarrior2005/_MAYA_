@@ -70,7 +70,13 @@ export function knownCons(tool: AgentToolId, probes: ProbeResult[]): string[] {
     // "not measured" in a weaknesses list reads as a weakness.
     if (probe.outcome !== "fail" && probe.outcome !== "warn") continue;
     if (probe.id === "installed") cons.unshift("Not installed on this machine");
-    else if (probe.id === "authenticated") cons.unshift("Installed, but not logged in");
+    else if (probe.id === "authenticated") {
+      cons.unshift(
+        probe.outcome === "warn"
+          ? "Its login is assumed, not checked — a stored session can be expired"
+          : "Installed, but not logged in",
+      );
+    }
     else if (probe.id === "binary") cons.unshift(`Resolved to a shim: ${probe.detail}`);
     else if (probe.id === "can-edit") cons.push(`Measured here: ${probe.detail}`);
     else if (probe.id === "restraint") cons.push(`Measured here: ${probe.detail}`);

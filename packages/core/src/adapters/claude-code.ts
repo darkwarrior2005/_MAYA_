@@ -63,11 +63,20 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       };
     }
 
-    if (hasKey) return { installed: true, authenticated: true, detail: "using API key from env" };
+    if (hasKey) {
+      return {
+        installed: true,
+        authenticated: true,
+        verified: true,
+        detail: "using API key from env",
+      };
+    }
     if (cliOnPath) {
       return {
         installed: true,
         authenticated: true,
+        // A stored session can be expired, and this says nothing about it.
+        verified: false,
         detail: "relying on credentials stored by `claude login` (not verified)",
       };
     }
