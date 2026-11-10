@@ -3,7 +3,11 @@ export type TaskId = string;
 export type EventId = number;
 
 /** The tools Maya ships with. */
-export type BuiltInToolId = "claude-code" | "copilot-cli" | "antigravity-cli";
+export type BuiltInToolId =
+  | "claude-code"
+  | "copilot-cli"
+  | "antigravity-cli"
+  | "codex-cli";
 
 /**
  * Any tool id, including one a project added itself. The intersection with an

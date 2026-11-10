@@ -92,6 +92,15 @@ export const defaultConfig = (): MayaConfig => ({
       stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
       enabled: false,
     },
+    {
+      id: "worker-codex",
+      tool: "codex-cli",
+      displayName: "Worker (Codex CLI)",
+      stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
+      enabled: false,
+      // Codex grants permission with a sandbox policy rather than a tool
+      // list, so this worker takes `sandbox`, not `allowedTools`.
+    },
   ],
 });
 

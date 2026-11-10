@@ -143,6 +143,7 @@ describe("adapter plugins", () => {
     expect(registry.all().map((adapter) => adapter.id).sort()).toEqual([
       "antigravity-cli",
       "claude-code",
+      "codex-cli",
       "copilot-cli",
     ]);
   });

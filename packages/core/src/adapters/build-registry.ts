@@ -1,6 +1,7 @@
 import type { MayaConfig, MayaPaths } from "../config/maya-config.js";
 import { AntigravityCliAdapter } from "./antigravity-cli.js";
 import { ClaudeCodeAdapter } from "./claude-code.js";
+import { CodexCliAdapter } from "./codex-cli.js";
 import { CopilotCliAdapter } from "./copilot-cli.js";
 import { loadAdapterPlugins } from "./plugin-loader.js";
 import { AdapterRegistry } from "./registry.js";
@@ -11,7 +12,8 @@ export function buildRegistry(paths: MayaPaths): AdapterRegistry {
   return new AdapterRegistry()
     .register(new ClaudeCodeAdapter())
     .register(new CopilotCliAdapter({ rawLogPath }))
-    .register(new AntigravityCliAdapter({ rawLogPath }));
+    .register(new AntigravityCliAdapter({ rawLogPath }))
+    .register(new CodexCliAdapter({ rawLogPath }));
 }
 
 /**

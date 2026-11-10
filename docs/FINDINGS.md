@@ -53,7 +53,42 @@ Hence `resolveExecutable()`.
 
 **Never default to the bypass flags.** Not `bypassPermissions` (Claude), not
 `--yolo` / `--allow-all-tools` (Copilot), not `--dangerously-skip-permissions`
-(Antigravity). The defaults are `acceptEdits`, `write`, and `--mode accept-edits`.
+(Antigravity), not `--dangerously-bypass-approvals-and-sandbox` / `--yolo` or
+`--sandbox danger-full-access` (Codex). The defaults are `acceptEdits`,
+`write`, `--mode accept-edits`, and `--sandbox workspace-write`.
+
+**Codex grants permission with a sandbox, not a tool list, and `codex exec`
+defaults to `read-only`.** So a Codex worker that is not given
+`--sandbox workspace-write` cannot change one file, and the run looks like an
+agent that decided not to do the task rather than one that was not allowed to.
+The flip side is that a worker profile carrying Copilot's `allowedTools` means
+nothing here: `codex-cli.ts` refuses it before the spawn rather than dropping
+it, because silently ignoring a permission setting runs the agent with more
+freedom than whoever wrote the profile thought they had granted. Note also
+that `--full-auto` is gone, and `--approve-for-me` conflicts with `--sandbox`.
+
+**Codex's `cached_input_tokens` is a subset of `input_tokens`, not an
+addition.** Its own documented sample reports 24,448 cached of 24,763 input.
+Maya sums `inputTokens + cacheReadTokens`, so reporting both whole bills a
+cached prompt at nearly 50k instead of 24,763. The adapter subtracts the
+cached part out of the fresh input, which makes the two add back to exactly
+what Codex said. The same reasoning leaves `reasoning_output_tokens` inside
+`output_tokens`.
+
+**`exec`'s flags go before the `resume` subcommand.** `--json` and `--sandbox`
+belong to `exec`; placed after `resume` they are read as that subcommand's
+flags, which it does not have. And the prompt goes behind a `--`, because a
+prompt is arbitrary text: one starting with a dash parses as a flag, and a
+prompt of exactly `-` means "read the prompt from stdin", which hangs on a
+stdin nobody will write to.
+
+**Codex's event stream is parsed from OpenAI's published sample, not from a
+run.** No `codex` was installed on the machine the adapter was written on. The
+docs do publish a worked JSONL sample and name the event types, which is more
+than Antigravity ever offered — but it is still a documented shape rather than
+an observed one, so every field is read as optional and nothing is inferred
+that was not given. Treat it the way `bugfixy.md` B3 treats Antigravity until
+someone has run it.
 
 ## Terminals
 

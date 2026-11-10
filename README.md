@@ -128,7 +128,11 @@ copilot login      # GitHub Copilot CLI
 agy login          # Google Antigravity CLI — interactive
 ```
 
-You do not need all three. Maya runs with whatever is logged in, and tells you
+```bash
+codex login        # OpenAI Codex CLI
+```
+
+You do not need all four. Maya runs with whatever is logged in, and tells you
 what is missing:
 
 ```bash
@@ -154,8 +158,8 @@ maya web -d ~/some-project
 > Agent runs cost money — these are the real CLIs, on your own accounts. Maya
 > never passes a bypass-permissions flag to any of them: the defaults are
 > `acceptEdits` for Claude Code, `write` for Copilot, `--mode accept-edits` for
-> Antigravity. If you want more than that, you set it per worker in
-> `.maya/config.json`.
+> Antigravity, and the `workspace-write` sandbox for Codex. If you want more
+> than that, you set it per worker in `.maya/config.json`.
 
 ---
 

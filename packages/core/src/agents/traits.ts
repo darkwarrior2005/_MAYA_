@@ -9,9 +9,10 @@ import type { AgentToolId, PlatformNote, ProbeResult } from "@maya/shared-types"
  * before choosing which worker to enable.
  */
 export const TAGLINES: Record<string, string> = {
-  "claude-code": "Runs inside Maya. The most wired-in of the three.",
+  "claude-code": "Runs inside Maya. The most wired-in of them.",
   "copilot-cli": "Capable, but every run costs a premium request.",
-  "antigravity-cli": "The newest, and the least understood.",
+  "antigravity-cli": "Thorough and slow, and the least understood of them.",
+  "codex-cli": "Sandboxed by design. The only one that fences itself.",
 };
 
 const STATIC_PROS: Record<string, string[]> = {
@@ -29,6 +30,13 @@ const STATIC_PROS: Record<string, string[]> = {
   "antigravity-cli": [
     "Streams its thinking as it goes, so a pane fills while it works",
     "Accepts edits unattended without a blanket permission flag",
+  ],
+  "codex-cli": [
+    "Sandboxed rather than permissioned: writes are fenced to the workspace by the OS, not by the agent agreeing to behave",
+    "Built for headless use — `codex exec` is a first-class mode, not a flag bolted onto a TUI",
+    "Publishes its event stream, so Maya parses a documented schema instead of a reverse-engineered one",
+    "Resumable by session id, and the id arrives in the first event of the run",
+    "Reports cached input tokens separately, so a cheap repeat run shows as one",
   ],
 };
 
@@ -48,6 +56,12 @@ const STATIC_CONS: Record<string, string[]> = {
     "Its failure shape has never been observed, so success is inferred rather than read",
     "Sends text in fragments, which Maya has to reassemble per step",
     "Not on PATH as an executable Node can spawn directly — it resolves to a .cmd",
+  ],
+  "codex-cli": [
+    "Defaults to a read-only sandbox, so a worker that is not given `workspace-write` cannot change anything",
+    "Permission is one sandbox setting, not per-tool: you cannot allow edits while forbidding shell",
+    "Refuses to run outside a git repository unless told to, which is fine for Maya and surprising elsewhere",
+    "Maya parses its stream from OpenAI's published sample, not from a run on this machine — no `codex` was installed to check against",
   ],
 };
 

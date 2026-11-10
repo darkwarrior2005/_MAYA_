@@ -78,6 +78,7 @@ const SIGILS: Record<string, string> = {
   "claude-code": "◆",
   "copilot-cli": "✦",
   "antigravity-cli": "▲",
+  "codex-cli": "◉",
 };
 
 function CharacterCard({

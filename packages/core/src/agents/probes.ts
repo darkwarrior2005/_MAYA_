@@ -99,8 +99,9 @@ async function probeOne(
     live: false,
   });
 
-  const resolved = await resolveExecutable(binaryFor(adapter.id));
-  if (binaryFor(adapter.id)) {
+  const binary = binaryFor(adapter.id);
+  const resolved = await resolveExecutable(binary);
+  if (binary) {
     const shimmed = resolved ? looksLikeShim(resolved) : null;
     probes.push({
       id: "binary",
@@ -113,7 +114,11 @@ async function probeOne(
         ? shimmed
           ? `${resolved} — this is a ${shimmed} shim, which can hide the real tool`
           : resolved
-        : "runs in-process, so there is no binary to resolve",
+        : // This branch is only reached for a tool that *has* a binary, so
+          // "runs in-process" — which is what it used to say — was false for
+          // every uninstalled subprocess tool. Adding Codex is what made it
+          // visible; Copilot and Antigravity read the same way when absent.
+          `\`${binary}\` is not on PATH, so there was nothing to resolve`,
       live: false,
     });
   }
@@ -425,6 +430,7 @@ function scoreFrom(
 function binaryFor(tool: string): string {
   if (tool === "copilot-cli") return "copilot";
   if (tool === "antigravity-cli") return "agy";
+  if (tool === "codex-cli") return "codex";
   return "";
 }
 

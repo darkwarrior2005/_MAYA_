@@ -2,6 +2,7 @@ export * from "./adapters/adapter.js";
 export * from "./adapters/antigravity-cli.js";
 export * from "./adapters/build-registry.js";
 export * from "./adapters/claude-code.js";
+export * from "./adapters/codex-cli.js";
 export * from "./adapters/copilot-cli.js";
 export * from "./adapters/git-bash.js";
 export * from "./adapters/subprocess-adapter.js";
