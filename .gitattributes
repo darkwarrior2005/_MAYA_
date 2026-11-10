@@ -1,0 +1,12 @@
+# Normalise line endings in the repository, so Windows checkouts stop warning
+# on every commit and shell scripts never arrive with CRLF — bash fails those
+# with "\r: command not found".
+* text=auto eol=lf
+
+# Binary, never touched.
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

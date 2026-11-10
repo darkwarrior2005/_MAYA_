@@ -47,6 +47,7 @@ export class SubprocessAgentHandle implements AgentHandle {
   private readonly completion: Promise<AgentRunResult>;
   private child: ChildHandle | undefined;
   private exited = false;
+  private warnedCorrupt = false;
   private buffer = "";
   private usage: TokenUsage | undefined;
   private disposed = false;
@@ -117,7 +118,7 @@ export class SubprocessAgentHandle implements AgentHandle {
     const env = { ...process.env, ...spec.env } as Record<string, string>;
 
     try {
-      return spec.transport === "pty"
+      return spec.transport === "pty" && (await ptyAvailable())
         ? await this.runPty(command, spec, options, env)
         : await this.runPipe(command, spec, options, env);
     } catch (error) {
@@ -136,10 +137,14 @@ export class SubprocessAgentHandle implements AgentHandle {
     env: Record<string, string>,
   ): Promise<AgentRunResult> {
     const { spawn } = await import("node:child_process");
-    const child = spawn(command, spec.args, {
+    // Node refuses to spawn a .cmd or .bat directly (CVE-2024-27980), and a
+    // path with spaces needs quoting once a shell is involved. `agy` resolves
+    // to agy.cmd on Windows, so this is the normal case, not an edge one.
+    const viaShell = needsShell(command);
+    const child = spawn(viaShell ? quoteForShell(command) : command, spec.args, {
       cwd: options.cwd,
       env,
-      shell: false,
+      shell: viaShell,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -229,6 +234,23 @@ export class SubprocessAgentHandle implements AgentHandle {
   private handleLine(line: string): void {
     const clean = stripAnsi(line).trim();
     if (!clean) return;
+
+    // A line that opens like JSON and does not parse is a chopped stream, not
+    // chatter. That is exactly how the PTY bug hid itself: every line was
+    // dropped in silence and the run looked clean. Said once per run, because
+    // a broken stream breaks every line.
+    if (!this.warnedCorrupt && looksLikeTruncatedJson(clean)) {
+      this.warnedCorrupt = true;
+      this.emit({
+        type: "error",
+        agentId: this.agentId,
+        message:
+          "the tool's output stream looks corrupted: a line began as JSON and " +
+          "could not be parsed. Its raw output is in .maya/logs.",
+        fatal: false,
+      });
+    }
+
     for (const event of this.config.parseLine(clean, this.agentId)) {
       if (event.type === "usage") this.usage = event.usage;
       if (event.type === "error" && event.fatal) this.fatalError = event.message;
@@ -273,6 +295,40 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/** Whether the optional native module is actually installed. */
+async function ptyAvailable(): Promise<boolean> {
+  try {
+    await import("node-pty");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A line that starts like JSON but will not parse. Pipes should never produce
+ * one; a PTY chopping long lines produces nothing else.
+ */
+function looksLikeTruncatedJson(line: string): boolean {
+  if (!line.startsWith("{") && !line.startsWith("[")) return false;
+  try {
+    JSON.parse(line);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** True for a Windows batch script, which cannot be spawned directly. */
+function needsShell(command: string): boolean {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+}
+
+/** cmd.exe splits on spaces unless the program is quoted. */
+function quoteForShell(command: string): string {
+  return command.includes(" ") ? `"${command}"` : command;
 }
 
 type NodePtyModule = typeof import("node-pty");

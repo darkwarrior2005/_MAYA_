@@ -16,7 +16,15 @@ export async function buildFileTree(git: SimpleGit): Promise<RepoTree> {
   const raw = await git.raw(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
   // -z because a path may contain anything except NUL, newlines included, and
   // git would otherwise quote and escape those paths.
-  const paths = raw.split("\0").filter((path) => path !== "");
+  const listed = raw.split("\0").filter((path) => path !== "");
+
+  // `--cached` reads the index, so a file deleted from disk but not yet
+  // committed is still listed. Showing it gives the person a tree entry they
+  // cannot open.
+  const removed = new Set(
+    (await git.raw(["ls-files", "--deleted", "-z"])).split("\0").filter((path) => path !== ""),
+  );
+  const paths = listed.filter((path) => !removed.has(path));
 
   const root: FileNode = { name: "", path: "", type: "dir", children: [] };
   for (const path of paths) insert(root, path);

@@ -55,7 +55,7 @@ export function registerWeb(program: Command): void {
 
       // Any daemon starts by tidying up after one that did not stop cleanly.
       for (const note of describeRecovery(
-        await recoverSession({ paths: repo.paths, git: repo.git, store }),
+        await recoverSession({ paths: repo.paths, git: repo.git, store, bus }),
       )) {
         console.log(`[maya] ${note}`);
       }

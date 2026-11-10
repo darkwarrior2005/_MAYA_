@@ -13,7 +13,17 @@ import type { EventBus } from "../bus/event-bus.js";
  * The marker has to be told to the agent for any of this to happen, which is
  * what `SECRET_CHANNEL_BRIEFING` is for.
  */
-export const SECRET_MARKER = /^\s*@user\b:?\s?/i;
+/**
+ * The marker, and what keeps it from firing on ordinary code.
+ *
+ * `@user` must be followed by a space or a colon and then something to say.
+ * Without that, `@user.setter` — a normal Python property — would be read as
+ * a message to the person, and so would a `@user` JSDoc tag. A line inside a
+ * fenced code block never counts, whatever it says.
+ */
+export const SECRET_MARKER = /^\s*@user[:\s]\s*(?=\S)/i;
+
+const CODE_FENCE = /^\s*(```|~~~)/;
 
 export const SECRET_CHANNEL_BRIEFING = [
   "If you need something from the human directly — a decision only they can make,",
@@ -33,9 +43,18 @@ export interface SplitText {
 export function splitSecretLines(text: string): SplitText {
   const main: string[] = [];
   const secret: string[] = [];
+  let insideCode = false;
 
   for (const line of text.split("\n")) {
-    const match = SECRET_MARKER.exec(line);
+    if (CODE_FENCE.test(line)) {
+      insideCode = !insideCode;
+      main.push(line);
+      continue;
+    }
+
+    // Code an agent is showing the person is not a message to the person,
+    // however it begins.
+    const match = insideCode ? null : SECRET_MARKER.exec(line);
     if (match) {
       const body = line.slice(match[0].length).trim();
       if (body) secret.push(body);

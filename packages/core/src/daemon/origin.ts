@@ -34,11 +34,32 @@ export function isAllowedOrigin(origin: string | undefined, port: number): boole
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
+/**
+ * Whether the request actually arrived at this machine under a loopback name.
+ *
+ * `Origin` alone does not close DNS rebinding: an attacker's domain can be
+ * made to resolve to 127.0.0.1, and a page served from it reaches the daemon
+ * with `Host: evil.example`. The browser considers that same-origin, so it
+ * will happily read the response. Checking the Host header is the standard
+ * answer, and it costs nothing: the daemon only ever listens on loopback, so
+ * a Host that is not a loopback name did not come from a legitimate client.
+ */
+export function isAllowedHost(host: string | undefined, port: number): boolean {
+  if (!host) return false;
+  // Strip the port, taking care with a bracketed IPv6 literal.
+  const name = host.startsWith("[")
+    ? host.slice(0, host.indexOf("]") + 1)
+    : (host.split(":")[0] ?? "");
+  const given = host.includes("]") ? host.slice(host.indexOf("]") + 2) : host.split(":")[1];
+  if (given !== undefined && given !== "" && given !== String(port)) return false;
+  return LOOPBACK.has(name.toLowerCase());
+}
+
 /** The 403 body, so the refusal explains itself rather than looking like a bug. */
-export function originRefusal(origin: string): { error: string } {
+export function originRefusal(what: string): { error: string } {
   return {
     error:
-      `refused a request from ${origin}: this daemon only answers its own ` +
+      `refused a request from ${what}: this daemon only answers its own ` +
       "web interface and local tools",
   };
 }

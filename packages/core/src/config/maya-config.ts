@@ -125,6 +125,14 @@ export class MayaPaths {
   ensureDirs(): void {
     mkdirSync(join(this.stateDir, "agents"), { recursive: true });
     mkdirSync(join(this.stateDir, "logs"), { recursive: true });
+
+    // A .gitignore inside the state directory, so git ignores it the moment
+    // the directory exists. `excludeStateDirFromGit` still writes
+    // .git/info/exclude for the user's own checkout, but that has to be
+    // called, and anything that only calls ensureDirs() used to leave the
+    // tree looking dirty — which then blocked merges. This needs no call.
+    const marker = join(this.stateDir, ".gitignore");
+    if (!existsSync(marker)) writeFileSync(marker, "*\n", "utf8");
   }
 }
 

@@ -18,6 +18,32 @@ import { commandExists } from "./which.js";
  */
 export const COPILOT_DEFAULT_ALLOWED_TOOLS = ["write"];
 
+/**
+ * The permission kinds Copilot understands. A pattern is `kind` or
+ * `kind(argument)`; anything else grants nothing.
+ */
+const COPILOT_PERMISSION_KINDS = new Set(["write", "shell", "read", "fetch", "mcp"]);
+
+/**
+ * Says what is wrong with a permission pattern, or null if it is fine.
+ *
+ * Checked before launching, because Copilot does not complain: a pattern it
+ * does not understand silently grants nothing, every tool call is denied, the
+ * run does nothing — and it still costs one premium request. Failing here
+ * costs nothing and says which pattern to fix.
+ */
+export function describeBadPermission(pattern: string): string | null {
+  const match = /^([a-z_]+)(?:\((.*)\))?$/i.exec(pattern.trim());
+  if (!match) {
+    return `"${pattern}" is not a permission pattern — expected kind or kind(argument), such as write or shell(git:*)`;
+  }
+  const kind = (match[1] ?? "").toLowerCase();
+  if (!COPILOT_PERMISSION_KINDS.has(kind)) {
+    return `"${pattern}" names "${kind}", which is not a Copilot permission kind (${[...COPILOT_PERMISSION_KINDS].join(", ")}). Internal tool names like apply_patch grant nothing.`;
+  }
+  return null;
+}
+
 export interface CopilotAdapterOptions {
   /** Permission patterns passed to --allow-tool. */
   allowedTools?: string[];
@@ -64,6 +90,17 @@ export class CopilotCliAdapter implements AgentAdapter {
     const allowed =
       options.allowedTools ?? this.options.allowedTools ?? COPILOT_DEFAULT_ALLOWED_TOOLS;
     const denied = options.deniedTools ?? this.options.deniedTools ?? [];
+    const bad = [...allowed, ...denied]
+      .map((pattern) => describeBadPermission(pattern))
+      .filter((problem): problem is string => problem !== null);
+    if (bad.length > 0) {
+      throw new Error(
+        `refusing to start Copilot: ${bad.join("; ")}. ` +
+          "A pattern Copilot cannot read grants nothing, denies every tool call, " +
+          "and still costs a premium request.",
+      );
+    }
+
     const args = [
       "-p",
       options.prompt,

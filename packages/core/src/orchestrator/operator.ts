@@ -194,24 +194,26 @@ export class Operator {
    * happened to finish, so the merge order is the order the user asked for.
    */
   private async dispatchAll(tasks: TaskSpec[], base: string): Promise<WorkerOutcome[]> {
-    const lanes = new Map<number, Array<{ position: number; task: TaskSpec }>>();
-    tasks.forEach((task, position) => {
-      const lane = position % this.deps.workers.length;
-      const queue = lanes.get(lane) ?? [];
-      queue.push({ position, task });
-      lanes.set(lane, queue);
-    });
-
+    // One shared queue that each worker pulls from when it is free, rather
+    // than dealing the tasks out in advance. Pre-assigning round-robin meant a
+    // worker handed a long task sat on everything behind it while another
+    // worker finished early and idled — with three tasks and two workers, the
+    // third waited for the first to finish even if the second took seconds.
+    const pending = tasks.map((task, position) => ({ position, task }));
     const done: Array<{ position: number; outcome: WorkerOutcome }> = [];
+
     await Promise.all(
-      [...lanes.entries()].map(async ([lane, queued]) => {
-        const worker = this.workerFor(lane);
-        for (const { position, task } of queued) {
-          done.push({ position, outcome: await this.dispatch(task, worker, base) });
+      this.deps.workers.map(async (worker) => {
+        for (;;) {
+          const next = pending.shift();
+          if (!next) return;
+          done.push({ position: next.position, outcome: await this.dispatch(next.task, worker, base) });
         }
       }),
     );
 
+    // In the order the tasks were given, not the order they happened to
+    // finish, so the merge order is the one the person asked for.
     return done.sort((a, b) => a.position - b.position).map((entry) => entry.outcome);
   }
 
@@ -290,7 +292,7 @@ export class Operator {
         const described = await this.summaries.describe({
           instruction: task.instruction,
           transcript: transcript.join("\n"),
-          diff: await branchManager.stagedDiffStat(),
+          diff: await branchManager.stagedDiffStat(base),
         });
         summary = described.subject;
         committed = await branchManager.commitStaged(

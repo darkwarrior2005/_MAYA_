@@ -82,11 +82,65 @@ export function pickCharset(env: NodeJS.ProcessEnv = process.env): Charset {
   return announced ? "unicode" : "ascii";
 }
 
+/**
+ * Common Unicode punctuation an agent emits constantly, and its ASCII
+ * equivalent.
+ *
+ * `pickCharset` already draws ASCII borders on a legacy console, but that
+ * only fixed the frame: an em-dash or a curly quote inside the box still
+ * arrived as mojibake on a non-UTF-8 code page. If the borders need ASCII,
+ * so does everything between them.
+ */
+const ASCII_FOLD: Array<[RegExp, string]> = [
+  [/[‘’‛]/g, "'"],
+  [/[“”‟]/g, '"'],
+  [/[–—―]/g, "-"],
+  [/…/g, "..."],
+  [/[•·]/g, "*"],
+  [/→/g, "->"],
+  [/←/g, "<-"],
+  [/[\u00a0\u2007\u202f]/g, " "],
+  [/[✓✔]/g, "v"],
+  [/[✗✘]/g, "x"],
+];
+
+function foldPane(pane: PaneView): PaneView {
+  return {
+    ...pane,
+    title: toAscii(pane.title),
+    ...(pane.subtitle ? { subtitle: toAscii(pane.subtitle) } : {}),
+    lines: pane.lines.map(toAscii),
+  };
+}
+
+function foldLayout(input: LayoutInput): LayoutInput {
+  return {
+    ...input,
+    operator: foldPane(input.operator),
+    workers: input.workers.map(foldPane),
+    ...(input.banner ? { banner: input.banner.map(toAscii) } : {}),
+    promptLabel: toAscii(input.promptLabel),
+    prompt: toAscii(input.prompt),
+    status: toAscii(input.status),
+  };
+}
+
+/** Folds what it can to ASCII; anything left is replaced by `?`. */
+export function toAscii(text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of ASCII_FOLD) out = out.replace(pattern, replacement);
+  // eslint-disable-next-line no-control-regex -- everything outside ASCII
+  return out.replace(/[^\u0000-\u007f]/g, "?");
+}
+
 export function renderLayout(
   input: LayoutInput,
   size: TerminalSize,
   charset: Charset = "unicode",
 ): string[] {
+  // On a console that cannot draw Unicode borders, the text between them is
+  // no more printable than the borders were.
+  if (charset === "ascii") input = foldLayout(input);
   const cols = Math.max(MIN_PANE_WIDTH, size.cols);
   const rows = Math.max(6, size.rows);
 
@@ -179,6 +233,7 @@ export function renderBox(
   height: number,
   charset: Charset = "unicode",
 ): string[] {
+  if (charset === "ascii") pane = foldPane(pane);
   const set = charset === "ascii" ? ASCII : UNICODE;
   const g = pane.focused ? set.focus : set.plain;
 

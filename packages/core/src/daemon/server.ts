@@ -7,7 +7,7 @@ import type { EventStore } from "../bus/event-store.js";
 import type { MayaPaths } from "../config/maya-config.js";
 import { FileWatcher } from "./file-watcher.js";
 import { createApiHandler, type WebApiDeps } from "./http-api.js";
-import { isAllowedOrigin, originRefusal } from "./origin.js";
+import { isAllowedHost, isAllowedOrigin, originRefusal } from "./origin.js";
 
 export interface DaemonLock {
   pid: number;
@@ -49,8 +49,9 @@ export class Daemon {
     const api = this.options.web ? createApiHandler(this.options.web) : undefined;
     const http = createServer((req, res) => {
       const origin = req.headers.origin;
-      if (!isAllowedOrigin(origin, this.port)) {
-        const body = JSON.stringify(originRefusal(String(origin)));
+      const host = req.headers.host;
+      if (!isAllowedOrigin(origin, this.port) || !isAllowedHost(host, this.port)) {
+        const body = JSON.stringify(originRefusal(String(origin ?? host)));
         res.writeHead(403, {
           "content-type": "application/json",
           "content-length": Buffer.byteLength(body),
@@ -80,7 +81,9 @@ export class Daemon {
       path: "/ws",
       // Without this any page the user happens to have open can read the
       // whole session, secret channel included.
-      verifyClient: (info: { origin?: string }) => isAllowedOrigin(info.origin, this.port),
+      verifyClient: (info: { origin?: string; req: { headers: Record<string, unknown> } }) =>
+        isAllowedOrigin(info.origin, this.port) &&
+        isAllowedHost(info.req.headers["host"] as string | undefined, this.port),
     });
     wss.on("connection", (socket, request) => this.onConnection(socket, request.url ?? "/ws"));
     this.wss = wss;

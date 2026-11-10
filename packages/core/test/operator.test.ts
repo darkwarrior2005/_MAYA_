@@ -377,3 +377,72 @@ describe("Operator planning", () => {
     expect(report.outcomes.map((o) => o.task.instruction)).toEqual(["do the thing"]);
   });
 });
+
+describe("Operator work distribution", () => {
+  /** Records overlap per agent and takes a configurable time per task. */
+  class PacedAdapter implements AgentAdapter {
+    readonly id = "claude-code" as const;
+    readonly displayName = "Paced";
+    readonly capabilities = { streaming: false, structuredOutput: false, resumable: false };
+    readonly runs: Array<{ agentId: string; task: string; start: number; end: number }> = [];
+
+    constructor(private readonly durations: Record<string, number>) {}
+
+    async check(): Promise<AdapterHealth> {
+      return { installed: true, authenticated: true };
+    }
+
+    async start(options: AgentRunOptions): Promise<AgentHandle> {
+      const runs = this.runs;
+      const task = options.prompt.split("\n")[0] ?? "";
+      const wait = this.durations[task.trim()] ?? 20;
+      return {
+        agentId: options.agentId,
+        onEvent: () => () => {},
+        waitForCompletion: async () => {
+          const start = Date.now();
+          await new Promise((resolve) => setTimeout(resolve, wait));
+          runs.push({ agentId: options.agentId, task: task.trim(), start, end: Date.now() });
+          return { ok: true, stalled: false };
+        },
+        interrupt: async () => {},
+        kill: async () => {},
+      };
+    }
+  }
+
+  it("does not leave a worker idle while another holds a queue", async () => {
+    // Dealing round-robin gave worker-a positions 0 and 2 — "slow" and
+    // "third" — so the third task waited behind the slow one even though the
+    // other worker was free. Pulling from a shared queue, whoever finishes
+    // first takes it.
+    //
+    // Asserted structurally rather than on timings: creating a git worktree
+    // takes seconds on Windows and swamps any wall-clock comparison.
+    const adapter = new PacedAdapter({ slow: 3000, quick: 10, third: 10 });
+    const { operator } = await setup(adapter, [profile("worker-a"), profile("worker-b")]);
+
+    await operator.run(["slow", "quick", "third"]);
+
+    const ranSlow = adapter.runs.find((run) => run.task === "slow")?.agentId;
+    const ranThird = adapter.runs.find((run) => run.task === "third")?.agentId;
+    expect(ranSlow).toBeDefined();
+    expect(ranThird).toBeDefined();
+    expect(ranThird).not.toBe(ranSlow);
+  });
+
+  it("still gives each task to exactly one worker", async () => {
+    const adapter = new PacedAdapter({});
+    const { operator } = await setup(adapter, [profile("worker-a"), profile("worker-b")]);
+
+    const report = await operator.run(["one", "two", "three", "four"]);
+
+    expect(report.outcomes.map((outcome) => outcome.task.summary)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+    ]);
+    expect(adapter.runs).toHaveLength(4);
+  });
+});

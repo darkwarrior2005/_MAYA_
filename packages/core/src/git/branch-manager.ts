@@ -49,13 +49,25 @@ export class BranchManager {
     return true;
   }
 
-  /** What is staged, as `--stat`, for whoever is writing the message. */
-  async stagedDiffStat(): Promise<string> {
-    try {
-      return await this.git.raw(["diff", "--cached", "--stat"]);
-    } catch {
-      return "";
+  /**
+   * What is staged, as `--stat`, for whoever is writing the message.
+   *
+   * Compared against `base` when given, not HEAD: an agent that made commits
+   * of its own during the run would otherwise have everything but its last
+   * uncommitted edit left out of the summary.
+   */
+  async stagedDiffStat(base?: string): Promise<string> {
+    for (const args of base
+      ? [["diff", "--cached", "--stat", base], ["diff", "--cached", "--stat"]]
+      : [["diff", "--cached", "--stat"]]) {
+      try {
+        return await this.git.raw(args);
+      } catch {
+        // `base` may not be reachable from a worktree cut elsewhere; fall
+        // through to the plain staged diff rather than losing the summary.
+      }
     }
+    return "";
   }
 
   async commitStaged(message: string): Promise<string | null> {

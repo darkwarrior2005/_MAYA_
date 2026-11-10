@@ -112,7 +112,7 @@ export function registerStart(program: Command): void {
 
       // Whatever the last daemon left behind, before anything of this session
       // is running and could be confused with it.
-      const recovery = await recoverSession({ paths: repo.paths, git: repo.git, store });
+      const recovery = await recoverSession({ paths: repo.paths, git: repo.git, store, bus });
       const recoveryNotes = describeRecovery(recovery);
 
       const { registry, problems } = await loadRegistry(repo.paths, config, (message) =>

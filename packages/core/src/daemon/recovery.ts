@@ -2,12 +2,15 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SimpleGit } from "simple-git";
 import type { TaskSpec } from "@maya/shared-types";
+import type { EventBus } from "../bus/event-bus.js";
 import type { EventStore } from "../bus/event-store.js";
 import type { MayaPaths } from "../config/maya-config.js";
 import { TaskQueue } from "../orchestrator/task-queue.js";
 import { clearLock, isLockAlive, readLock } from "./server.js";
 
 export interface RecoveryReport {
+  /** Questions a dead Operator left on screen with nobody able to answer. */
+  cancelledQuestions: number;
   /** A lock whose process is gone, now removed. */
   clearedStaleLock: number | null;
   /** Tasks left mid-flight by a daemon that died, now marked blocked. */
@@ -23,6 +26,8 @@ export interface RecoveryDeps {
   paths: MayaPaths;
   git: SimpleGit;
   store: EventStore;
+  /** Needed to close an orphaned question; without it they are left alone. */
+  bus?: EventBus;
 }
 
 /**
@@ -40,6 +45,7 @@ export interface RecoveryDeps {
  */
 export async function recoverSession(deps: RecoveryDeps): Promise<RecoveryReport> {
   const report: RecoveryReport = {
+    cancelledQuestions: 0,
     clearedStaleLock: null,
     orphanedTasks: [],
     leftoverWorktrees: [],
@@ -50,6 +56,13 @@ export async function recoverSession(deps: RecoveryDeps): Promise<RecoveryReport
     clearLock(deps.paths);
     report.clearedStaleLock = lock.pid;
   }
+
+  // Views derive an open question from conflict_prompt with no matching
+  // conflict_resolved. An Operator killed mid-question leaves one in the log
+  // forever, so every future session shows a question nothing is waiting on
+  // and nothing can answer. Close them here, where the Operator that asked
+  // is known to be gone.
+  report.cancelledQuestions = cancelOrphanedQuestions(deps);
 
   const queue = new TaskQueue(deps.store.database);
   for (const task of queue.all()) {
@@ -73,9 +86,38 @@ export async function recoverSession(deps: RecoveryDeps): Promise<RecoveryReport
   return report;
 }
 
+function cancelOrphanedQuestions(deps: RecoveryDeps): number {
+  const answered = new Set<string>();
+  const asked = new Map<string, string>();
+
+  for (const event of deps.store.since(0)) {
+    const payload = event.payload;
+    if (payload.type === "conflict_resolved") answered.add(payload.promptId);
+    if (payload.type === "conflict_prompt") asked.set(payload.promptId, payload.question);
+  }
+
+  let cancelled = 0;
+  for (const [promptId] of asked) {
+    if (answered.has(promptId)) continue;
+    deps.bus?.publish("main", null, "conflict_resolved", {
+      type: "conflict_resolved",
+      promptId,
+      chosen: "cancelled",
+      custom: false,
+    });
+    cancelled += 1;
+  }
+  return cancelled;
+}
+
 /** One line per thing recovery had to do, or nothing when it was a clean start. */
 export function describeRecovery(report: RecoveryReport): string[] {
   const lines: string[] = [];
+  if (report.cancelledQuestions > 0) {
+    lines.push(
+      `${report.cancelledQuestions} question(s) from a previous run had nobody left to answer them and were cancelled`,
+    );
+  }
   if (report.clearedStaleLock !== null) {
     lines.push(`cleared a stale daemon lock (pid ${report.clearedStaleLock} is gone)`);
   }
