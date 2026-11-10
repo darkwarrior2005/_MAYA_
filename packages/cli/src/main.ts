@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { registerAgents } from "./commands/agents.js";
 import { registerAttach } from "./commands/attach.js";
 import { registerInit } from "./commands/init.js";
 import { registerRun } from "./commands/run.js";
@@ -20,6 +21,7 @@ registerStart(program);
 registerAttach(program);
 registerWeb(program);
 registerDoctor(program);
+registerAgents(program);
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));

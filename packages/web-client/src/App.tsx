@@ -12,10 +12,24 @@ import { Chat } from "./Chat.js";
 import { ConflictPrompt } from "./ConflictPrompt.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { GitTree } from "./GitTree.js";
+import { AgentArena } from "./AgentArena.js";
 import { AgentsRoster, AgentsToDo, InfoPanel, SecretChannel } from "./Panels.js";
 import { useBus } from "./useBus.js";
 
+/** Which page is showing. Hash routing: no router, no dependency. */
+function useRoute(): string {
+  const [route, setRoute] = useState(() => window.location.hash.replace(/^#\/?/, "") || "session");
+  useEffect(() => {
+    const onChange = (): void =>
+      setRoute(window.location.hash.replace(/^#\/?/, "") || "session");
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return route;
+}
+
 export function App(): ReactElement {
+  const route = useRoute();
   const { events, connection, signals, derived } = useBus();
 
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -86,11 +100,23 @@ export function App(): ReactElement {
         <span className="repo" title={session?.repoRoot ?? ""}>
           {session ? shorten(session.repoRoot) : "connecting…"}
         </span>
+        <nav className="tabs">
+          <a className={route === "session" ? "on" : ""} href="#/session">
+            Session
+          </a>
+          <a className={route === "arena" ? "on" : ""} href="#/arena">
+            Agents
+          </a>
+        </nav>
         <span className={`conn conn-${connection}`}>{connectionLabel(connection)}</span>
       </header>
 
       {problem && <p className="banner error">{problem}</p>}
 
+      {route === "arena" && <AgentArena />}
+
+      {route !== "arena" && (
+      <>
       <main className="columns">
         <section className="panel panel-tree">
           <div className="panel-head">
@@ -181,6 +207,8 @@ export function App(): ReactElement {
           </div>
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }

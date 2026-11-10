@@ -1,4 +1,5 @@
 import type {
+  AgentReport,
   BusEvent,
   ConflictOption,
   GitGraph,
@@ -33,6 +34,7 @@ export const fetchGraph = (): Promise<GitGraph> => get("/api/graph");
 export const fetchFiles = (): Promise<RepoTree> => get("/api/files");
 export const fetchTasks = (): Promise<TaskSpec[]> => get("/api/tasks");
 export const fetchUsage = (): Promise<UsageTotals> => get("/api/usage");
+export const fetchAgents = (): Promise<AgentReport> => get("/api/agents");
 export const fetchConflict = (): Promise<ConflictState> => get("/api/conflict");
 export interface EventPage {
   events: BusEvent[];

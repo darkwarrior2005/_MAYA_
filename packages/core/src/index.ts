@@ -6,6 +6,8 @@ export * from "./adapters/copilot-cli.js";
 export * from "./adapters/git-bash.js";
 export * from "./adapters/subprocess-adapter.js";
 export * from "./adapters/plugin-loader.js";
+export * from "./agents/probes.js";
+export * from "./agents/traits.js";
 export * from "./adapters/registry.js";
 export * from "./adapters/watchdog.js";
 export * from "./adapters/which.js";

@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, relative, resolve, sep } from "node:path";
 import type { SimpleGit } from "simple-git";
@@ -138,6 +138,27 @@ async function handleApi(
     return;
   }
 
+  if (route === "/api/agents" && request.method === "GET") {
+    // Served from the file `maya agents` wrote. Probing on request would
+    // make a page load run the agents, which for Copilot costs a credit.
+    const file = join(deps.repoRoot, ".maya", "agents-report.json");
+    if (!existsSync(file)) {
+      send(response, 404, {
+        error: "no agent report yet",
+        hint: "run `maya agents` (add --live to have each agent actually do something)",
+      });
+      return;
+    }
+    try {
+      send(response, 200, JSON.parse(readFileSync(file, "utf8")));
+    } catch (error) {
+      send(response, 500, {
+        error: `the agent report could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+    return;
+  }
+
   if (route === "/api/usage" && request.method === "GET") {
     // Served from the running total the daemon keeps, not a fresh scan of the
     // log: the web client refetches this on every usage event, and scanning
@@ -254,11 +275,16 @@ function serveClient(route: string, response: ServerResponse, clientRoot: string
     return;
   }
 
+  // The shell names the hashed asset files, so it must never be cached — a
+  // stale copy points at a bundle that no longer exists, or worse, at an old
+  // one that does. The assets themselves are content-addressed, so they can
+  // be cached hard.
+  const isShell = target.endsWith("index.html");
   response.writeHead(200, {
     "content-type": MIME[extname(target).toLowerCase()] ?? "application/octet-stream",
-    // The daemon is per-session and short-lived; a cached stale bundle would
-    // be served after a rebuild.
-    "cache-control": "no-cache",
+    "cache-control": isShell
+      ? "no-store, must-revalidate"
+      : "public, max-age=31536000, immutable",
   });
   createReadStream(target).pipe(response);
 }

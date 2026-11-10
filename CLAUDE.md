@@ -32,6 +32,8 @@ node packages/cli/dist/main.js run "<task>" -d <dir>   # one agent, one branch
 node packages/cli/dist/main.js start --tui "<task>" -d <dir>
 node packages/cli/dist/main.js attach -d <dir>         # panes on a live session
 node packages/cli/dist/main.js web -d <dir>           # web interface, opens a browser
+node packages/cli/dist/main.js agents -d <dir>       # test each agent and write a scorecard
+node packages/cli/dist/main.js agents -d <dir> --live  # ...by giving each one a real task; costs money
 ```
 
 The web client is a Vite app; `pnpm build` builds it and the daemon serves it.
@@ -47,6 +49,7 @@ node tools/verify/conflict.mjs   # a merge question in a pane, answered
 node tools/verify/column-width.mjs  # width.ts against a real terminal
 node tools/verify/mcp.mjs        # the MCP server over stdio, against a daemon
 node tools/verify/planning.mjs   # the Operator splitting a request, in a terminal
+node tools/verify/agents.mjs     # the agent probes, against stand-ins that misbehave
 node tools/verify/live-run.mjs   # a real agent run; costs money
 node tools/verify/packaged.mjs   # the bundle, driven from an unrelated cwd
 ```
@@ -72,11 +75,12 @@ names — see `docs/adr/0004`.
 | `packages/core/src/daemon` | One daemon per project: owns the bus, serves `/ws`, the HTTP API and the built web client on one port, watches the repository, writes `.maya/daemon.lock`. |
 | `packages/core/src/persistence` | Paired `.md`/`.html` context snapshots. |
 | `packages/core/src/usage` | Rolls the event log up into per-agent and per-model totals. |
+| `packages/core/src/agents` | Probes each configured agent and scores it. `traits.ts` holds what driving them taught us; `probes.ts` measures the rest, and with `--live` gives each one a real task. Feeds the Agents page. |
 | `tools/` | `package.mjs` bundles the CLI; `verify/` holds the checks that cannot be unit tests. |
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
 | `packages/mcp-server` | Maya as an MCP server over stdio, so another agent can read the session, post to it, reach the person, and answer the Operator. Talks to the daemon over HTTP like any other client. |
-| `packages/web-client` | React + Vite: git tree, repository browser, chat. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
+| `packages/web-client` | React + Vite: git tree, repository browser, chat, and the Agents page (`#/arena`). Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
 
 Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 `daemon.lock`, `agents/<id>/*.md|.html`, `logs/<id>.ndjson`.

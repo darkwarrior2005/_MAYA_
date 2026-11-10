@@ -186,6 +186,23 @@ generated manifest.
 **An ESM bundle needs `require`, `__filename` and `__dirname` shimmed.** `ws`
 and simple-git reach for them; esbuild's `banner` supplies them.
 
+**A probe must not disturb what it measures.** The restraint probe compared
+file names before and after, so an agent that rewrote a file it had already
+made passed — and then the fix compared sizes and times, which failed a
+well-behaved agent because the probe wrote its own scratch file between the
+two snapshots. It now writes that once, at setup.
+
+**`.roster` collided.** The Agents page reused a class the session panels
+already styled with `white-space: nowrap`, and the two columns drew on top of
+each other. Grid items also default to `min-width: auto`, so a long line
+widens its column instead of wrapping: `minmax(0, 1fr)` is what makes a card
+column shrink.
+
+**The app shell must never be cached.** It names the hashed asset files, so a
+stale copy points at a bundle that is gone. `no-cache` was not enough in
+practice; it is `no-store` now, and the content-addressed assets are cached
+hard instead.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

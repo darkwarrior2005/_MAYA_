@@ -701,3 +701,474 @@ p.error {
   opacity: 0.5;
   cursor: default;
 }
+
+/* Tabs ------------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.tabs a {
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.tabs a:hover {
+  color: var(--text);
+}
+
+.tabs a.on {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+/* The roster ------------------------------------------------------------- */
+
+.arena {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.arena-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.arena-empty h2 {
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.arena-empty code {
+  color: var(--accent);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.arena-head h2,
+.hazards h2 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.arena-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 14px;
+  margin: 14px 0 28px;
+}
+
+.character {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(160deg, var(--panel), color-mix(in srgb, var(--panel) 80%, black));
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(14px);
+  animation: deal 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+/* A slow sheen travelling across the card, like a trading-card foil. */
+.character::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 40%,
+    color-mix(in srgb, var(--accent) 14%, transparent) 50%,
+    transparent 60%
+  );
+  transform: translateX(-120%);
+  animation: sheen 7s ease-in-out infinite;
+}
+
+.character:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  transform: translateY(-3px);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.character-absent,
+.character-locked {
+  opacity: 0.72;
+}
+
+.character-absent::after {
+  animation: none;
+}
+
+@keyframes deal {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheen {
+  0%,
+  65% {
+    transform: translateX(-120%);
+  }
+  85%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.character-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sigil {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 12px;
+  font-size: 22px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: hover-bob 4s ease-in-out infinite;
+}
+
+.character-ready .sigil {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+@keyframes hover-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.character .who {
+  flex: 1;
+  min-width: 0;
+}
+
+.character h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.character .tagline {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.badge-ready {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+}
+
+.badge-locked {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+}
+
+.badge-absent {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 50%, transparent);
+}
+
+/* Stat bars */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+  margin: 0;
+}
+
+.stat dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.stat dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+}
+
+.bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+  overflow: hidden;
+}
+
+.bar .fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  transform-origin: left;
+  animation: fill 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: 0.25s;
+}
+
+@keyframes fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.stat .figure {
+  width: 2.4em;
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+/* Strengths and weaknesses */
+
+.sides {
+  display: grid;
+  /* minmax(0, …) so a long line wraps instead of forcing the column wider:
+     a grid item defaults to min-width:auto and will happily overflow. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.side h4 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.side.pros h4 {
+  color: var(--ok);
+}
+
+.side.cons h4 {
+  color: var(--error);
+}
+
+.side ul {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 12px;
+}
+
+.side li {
+  margin-bottom: 3px;
+  overflow-wrap: anywhere;
+}
+
+.side.pros li::marker {
+  color: var(--ok);
+}
+
+.side.cons li::marker {
+  color: var(--error);
+}
+
+@media (max-width: 620px) {
+  .sides {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.reveal {
+  align-self: flex-start;
+}
+
+/* The probe log */
+
+.probes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  animation: unroll 0.3s ease both;
+}
+
+@keyframes unroll {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.probe {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.probe .mark {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 2px;
+  flex: none;
+  background: var(--muted);
+}
+
+.probe-pass .mark {
+  background: var(--ok);
+}
+
+.probe-fail .mark {
+  background: var(--error);
+}
+
+.probe p {
+  margin: 1px 0 0;
+  color: var(--muted);
+}
+
+.live-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* The terrain ------------------------------------------------------------ */
+
+.hazard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.hazard-column h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.hazard {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.hazard-handled {
+  border-left-color: var(--ok);
+}
+
+.hazard-watch {
+  border-left-color: var(--warn);
+}
+
+.hazard-open {
+  border-left-color: var(--error);
+}
+
+.hazard header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hazard h4 {
+  margin: 0;
+  font-size: 12px;
+  flex: 1;
+}
+
+.sev {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.sev-open {
+  color: var(--error);
+}
+
+.sev-watch {
+  color: var(--warn);
+}
+
+.sev-handled {
+  color: var(--ok);
+}
+
+.hazard p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hazard .mitigation {
+  color: var(--text);
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+}
+
+/* Someone who does not want movement should not get any. */
+@media (prefers-reduced-motion: reduce) {
+  .character,
+  .character::after,
+  .sigil,
+  .bar .fill,
+  .probes {
+    animation: none;
+  }
+  .character {
+    opacity: 1;
+    transform: none;
+  }
+  .bar .fill {
+    transform: none;
+  }
+  .character:hover {
+    transform: none;
+  }
+}

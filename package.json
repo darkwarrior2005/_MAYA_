@@ -19,6 +19,7 @@
     "verify:width": "node tools/verify/column-width.mjs",
     "verify:mcp": "node tools/verify/mcp.mjs",
     "verify:planning": "node tools/verify/planning.mjs",
+    "verify:agents": "node tools/verify/agents.mjs",
     "package": "node tools/package.mjs",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,md}\""
   },

@@ -180,3 +180,5 @@ export type ServerMessage =
   | { kind: "signal"; signal: ServerSignal };
 
 export type ServerSignal = "files_changed";
+
+export * from "./agents.js";
