@@ -119,7 +119,15 @@ function run(args) {
 }
 
 const project = mkdtempSync(join(tmpdir(), "maya-agents-"));
-await run(["init", project]);
+const init = await run(["init", project]);
+if (init.code !== 0) {
+  // This used to be ignored, and the next line read .maya/config.json and
+  // died with ENOENT three steps from the actual cause. On a fresh Linux
+  // runner the cause was git having no user.name/user.email.
+  console.log("FAIL  `maya init` did not succeed, so nothing below could run");
+  console.log(init.out.trim());
+  process.exit(1);
+}
 mkdirSync(join(project, "plugins"), { recursive: true });
 writeFileSync(join(project, "plugins", "stand-ins.mjs"), PLUGIN, "utf8");
 

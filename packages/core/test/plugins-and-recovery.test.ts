@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,7 +8,7 @@ import { loadRegistry } from "../src/adapters/build-registry.js";
 import { loadAdapterPlugins } from "../src/adapters/plugin-loader.js";
 import { recoverSession, describeRecovery } from "../src/daemon/recovery.js";
 import { TaskQueue } from "../src/orchestrator/task-queue.js";
-import { makeTempRepo, onCleanup, runCleanups, safeRemove } from "./helpers.js";
+import { longTempDir, makeTempRepo, onCleanup, runCleanups, safeRemove } from "./helpers.js";
 
 afterEach(runCleanups);
 
@@ -39,7 +38,10 @@ export function createAdapter(options) {
 `;
 
 function project(): string {
-  const dir = mkdtempSync(join(tmpdir(), "maya-plugin-"));
+  // longTempDir, not mkdtempSync: a plugin is loaded from this path by
+  // dynamic import, and under vitest that goes through Vite, which cannot
+  // resolve the percent-encoded tilde an 8.3 short name produces.
+  const dir = longTempDir("maya-plugin-");
   onCleanup(() => safeRemove(dir));
   return dir;
 }

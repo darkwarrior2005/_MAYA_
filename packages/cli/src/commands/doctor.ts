@@ -29,6 +29,19 @@ export function registerDoctor(program: Command): void {
       try {
         await RepoManager.assertGitAvailable(repoRoot);
         console.log("ok    git is available");
+
+        // Having git is not the same as being able to commit with it. A fresh
+        // machine or container has no identity, and Maya commits on the
+        // user's behalf on every task.
+        if (await new RepoManager(repoRoot).hasIdentity()) {
+          console.log("ok    git knows who you are");
+        } else {
+          fail(
+            "git has no user.name/user.email, so Maya cannot commit:\n" +
+              '      git config --global user.name "Your Name"\n' +
+              '      git config --global user.email "you@example.com"',
+          );
+        }
       } catch (error) {
         fail(error instanceof Error ? error.message : String(error));
       }

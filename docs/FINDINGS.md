@@ -284,6 +284,39 @@ for a run that worked. The floor is the probe timeout now, so 0 means "only
 just finished inside the time it was given" — a statement about something,
 rather than about where the scale happened to end.
 
+**A machine with git but no identity cannot run `maya init`.** A fresh
+container or CI runner has no `user.name` or `user.email`, every `git commit`
+on it fails with "Please tell me who you are", and `openOrInit` makes an empty
+first commit because branch operations need a HEAD. The first CI run that got
+past setup died exactly there, on Linux — and the test suite did not catch it
+because `makeTempRepo` configures an identity, so the tests exercised a
+machine the real command never meets. `openOrInit` now checks before it
+commits and the error names the two commands to run, and `maya doctor` reports
+it as its own line: having git is not the same as being able to commit with it.
+
+**GitHub's Windows runners set `core.autocrlf=true` globally.** A file written
+as `docs
+`, committed and merged, came back out of the checkout as
+`docs
+`, and two content assertions failed there and nowhere else. Test
+repositories set `core.autocrlf=false` so what a test reads back does not
+depend on whose machine it ran on.
+
+**`pathToFileURL` percent-encodes a tilde, and Vite's resolver does not decode
+it.** On those runners `tmpdir()` sits under an 8.3 short name like
+`RUNNER~1`, which becomes `%7E` in the file URL an adapter plugin is imported
+from. Node decodes that correctly — the real CLI loads a plugin from such a
+path, checked by hand — but under vitest the import goes through Vite, which
+does not, so three plugin tests failed for a reason that was never Maya's.
+Test temp directories go through `realpathSync.native` now, which expands the
+short name.
+
+**A harness that ignores a setup step reports the wrong failure.**
+`tools/verify/agents.mjs` ran `maya init` without checking it, then read
+`.maya/config.json` and died with ENOENT — three steps and one confusing
+stack trace away from the missing git identity that actually caused it. It
+checks the exit code and prints the output now.
+
 ## Tooling and versions
 
 **pnpm 12 ignores `pnpm.onlyBuiltDependencies`** in `package.json` *and* in

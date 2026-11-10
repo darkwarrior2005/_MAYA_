@@ -11,6 +11,7 @@ import { isAllowedHost, isAllowedOrigin } from "../src/daemon/origin.js";
 import { describeRecovery, recoverSession } from "../src/daemon/recovery.js";
 import { buildFileTree } from "../src/git/file-tree.js";
 import { BranchManager } from "../src/git/branch-manager.js";
+import { RepoManager } from "../src/git/repo-manager.js";
 import { splitSecretLines } from "../src/orchestrator/secret-channel.js";
 import { makeTempRepo, onCleanup, runCleanups, safeRemove } from "./helpers.js";
 
@@ -209,5 +210,57 @@ describe("a temp directory is never left behind by these tests", () => {
     const dir = mkdtempSync(join(tmpdir(), "maya-tidy-"));
     safeRemove(dir);
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+describe("git with no identity configured", () => {
+  // The first CI run that got past setup failed here, on Linux: a fresh
+  // runner has no user.name or user.email, every `git commit` on it fails
+  // with "Please tell me who you are", and `maya init` makes an empty first
+  // commit. The harness then read .maya/config.json and died with ENOENT
+  // three steps away from the cause.
+  //
+  // `GIT_CONFIG_GLOBAL=/dev/null` is how that machine is reproduced on one
+  // that does have an identity: it hides the user's global config from git
+  // without touching it.
+  function blankConfig(): Record<string, string> {
+    return {
+      GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+      GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+  }
+
+  it("reports that it cannot commit, rather than letting git fail later", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "maya-noident-"));
+    onCleanup(() => safeRemove(dir));
+
+    const saved: Record<string, string | undefined> = {};
+    for (const [key, value] of Object.entries(blankConfig())) {
+      saved[key] = process.env[key];
+      process.env[key] = value;
+    }
+    try {
+      // One call, both assertions: the first `openOrInit` leaves the repo
+      // created, so a second one skips the identity check and throws nothing.
+      const failure = await new RepoManager(dir).openOrInit().then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(failure).toMatch(/user\.name or user\.email/);
+      // And it says what to run, because "it failed" is not useful on a
+      // machine the person has only just set up.
+      expect(failure).toMatch(/git config --global/);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("says yes on a repository that does have one", async () => {
+    const dir = await makeTempRepo();
+    expect(await new RepoManager(dir).hasIdentity()).toBe(true);
   });
 });

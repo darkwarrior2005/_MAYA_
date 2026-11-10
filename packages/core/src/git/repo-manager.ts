@@ -10,6 +10,18 @@ export class GitNotAvailableError extends Error {
   }
 }
 
+export class GitIdentityMissingError extends Error {
+  constructor() {
+    super(
+      "git has no user.name or user.email configured, so it cannot make a commit.\n" +
+        "  git config --global user.name  \"Your Name\"\n" +
+        '  git config --global user.email "you@example.com"\n' +
+        "Or set them for this repository only by dropping --global.",
+    );
+    this.name = "GitIdentityMissingError";
+  }
+}
+
 export class RepoManager {
   readonly git: SimpleGit;
   readonly paths: MayaPaths;
@@ -32,11 +44,38 @@ export class RepoManager {
     return existsSync(join(this.repoRoot, ".git")) && this.git.checkIsRepo();
   }
 
+  /**
+   * Whether git can attribute a commit on this machine.
+   *
+   * A fresh container or CI runner has no identity configured, and every
+   * `git commit` there fails with "Please tell me who you are". Maya makes
+   * commits on the user's behalf constantly, so this is worth asking about
+   * before the first one rather than after.
+   */
+  async hasIdentity(): Promise<boolean> {
+    const configured = async (key: string): Promise<boolean> => {
+      try {
+        return (await this.git.raw(["config", "--get", key])).trim().length > 0;
+      } catch {
+        // `git config --get` exits non-zero when the key is unset, which
+        // simple-git surfaces as a throw. Unset is the answer, not an error.
+        return false;
+      }
+    };
+    return (await configured("user.name")) && (await configured("user.email"));
+  }
+
   /** Opens an existing repo, or inits one with an empty first commit. */
   async openOrInit(): Promise<void> {
     await RepoManager.assertGitAvailable(this.repoRoot);
     if (!(await this.isRepo())) {
       await this.git.init();
+      // Checked after `init` so the message is about this repository's
+      // config too, and before the commit so the failure names the fix
+      // instead of being git's own "Please tell me who you are" — which is
+      // what a fresh Linux CI runner hit, three steps away from where it
+      // actually surfaced.
+      if (!(await this.hasIdentity())) throw new GitIdentityMissingError();
       await this.git.raw(["commit", "--allow-empty", "-m", "Initial commit (maya init)"]);
     }
     this.paths.ensureDirs();

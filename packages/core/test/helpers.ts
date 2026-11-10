@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
@@ -44,14 +44,40 @@ export function safeRemove(dir: string): void {
 }
 
 export async function makeTempRepo(): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "maya-test-"));
+  const dir = longTempDir("maya-test-");
   const git = simpleGit(dir);
   await git.init();
   await git.addConfig("user.email", "test@maya.local");
   await git.addConfig("user.name", "Maya Test");
+  // Never inherit the machine's line-ending rewriting. GitHub's Windows
+  // runners set core.autocrlf=true globally, so a file written as "docs\n",
+  // committed and merged came back out of git as "docs\r\n" — and two content
+  // assertions failed there and nowhere else. What those tests ask is whether
+  // the content arrived, not how the checkout punctuates it.
+  await git.addConfig("core.autocrlf", "false");
   await git.raw(["checkout", "-B", "main"]);
   await git.raw(["commit", "--allow-empty", "-m", "init"]);
   return dir;
+}
+
+/**
+ * A temp directory whose path contains no 8.3 short names.
+ *
+ * On GitHub's Windows runners `tmpdir()` sits under a short name like
+ * `RUNNER~1`. `pathToFileURL` percent-encodes the tilde to `%7E`, which Node
+ * decodes correctly — the real CLI does load an adapter plugin from such a
+ * path, checked by hand — but Vite's resolver, which serves dynamic imports
+ * under vitest, does not. So three plugin tests failed on CI for a reason
+ * that was never Maya's. `realpathSync.native` expands the short name and the
+ * question goes away.
+ */
+export function longTempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    return realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
 }
 
 export interface StubBehavior {

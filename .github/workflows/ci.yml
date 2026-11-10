@@ -46,6 +46,14 @@ jobs:
           node-version: 25
           cache: pnpm
 
+      # A runner has no git identity, and Maya commits on the user's behalf
+      # on every task — `maya init` alone makes an empty first commit. The
+      # first real CI run died on exactly this.
+      - name: Give git an identity
+        run: |
+          git config --global user.name "maya ci"
+          git config --global user.email "ci@maya.invalid"
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
