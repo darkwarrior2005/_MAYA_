@@ -413,6 +413,13 @@ button.ghost:hover {
   border-left-color: var(--warn);
 }
 
+/* A worker asking the Operator. Distinct from a question for the person
+   (.line-prompt), which is waiting on them and must stand out more. */
+.line-question {
+  border-left-color: var(--accent);
+  border-left-style: dashed;
+}
+
 .badge.secret {
   padding: 0 6px;
   border-radius: 999px;

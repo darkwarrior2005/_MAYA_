@@ -117,6 +117,12 @@ function describe(event: BusEvent): string | null {
       return `needs a decision: ${payload.question}`;
     case "conflict_resolved":
       return `decided: ${payload.chosen}`;
+    case "agent_question":
+      return `${payload.agentId} asks the Operator: ${payload.question}`;
+    case "operator_answer":
+      return payload.answered
+        ? `Operator: ${payload.answer}`
+        : `no answer: ${payload.answer}`;
     // Usage drives the info panel rather than the transcript.
     case "usage":
       return null;
@@ -130,7 +136,13 @@ function kind(event: BusEvent): string {
   if (type === "user_message") return "user";
   if (type === "error") return "error";
   if (type === "conflict_prompt") return "prompt";
-  if (type === "task_assigned" || type === "task_completed" || type === "merge_result") {
+  if (type === "agent_question") return "question";
+  if (
+    type === "task_assigned" ||
+    type === "task_completed" ||
+    type === "merge_result" ||
+    type === "operator_answer"
+  ) {
     return "operator";
   }
   return "agent";

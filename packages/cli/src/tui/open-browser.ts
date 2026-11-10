@@ -17,18 +17,29 @@ export async function openBrowser(
   if (env["MAYA_BROWSER"] === "none") return false;
 
   const { command, args } = launcher(url);
-  await new Promise<void>((resolve, reject) => {
+  // Wait for the spawn to succeed or fail before answering.
+  //
+  // This used to resolve immediately and return true, with the error listener
+  // firing into an already-settled promise. On a headless Linux box there is
+  // often no `xdg-open`, so Maya said it had opened a browser and nothing
+  // happened. Node emits exactly one of `spawn` or `error`, so there is no
+  // guess involved — and the caller already knows how to say "open it
+  // yourself".
+  return new Promise<boolean>((resolve) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       // `start` is a cmd.exe builtin, so Windows needs a shell to reach it.
       shell: process.platform === "win32",
     });
-    child.once("error", reject);
-    child.unref();
-    resolve();
+    child.once("error", () => resolve(false));
+    child.once("spawn", () => {
+      // Detach only once it is up: unref'ing a process that never started
+      // leaves nothing to report.
+      child.unref();
+      resolve(true);
+    });
   });
-  return true;
 }
 
 function launcher(url: string): { command: string; args: string[] } {

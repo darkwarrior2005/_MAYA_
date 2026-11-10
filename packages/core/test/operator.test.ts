@@ -212,18 +212,39 @@ describe("Operator scheduling", () => {
     expect(adapter.timeline.filter((entry) => entry.event === "start")).toHaveLength(3);
   });
 
+  /** True when two different agents had a run in flight at the same moment. */
+  function ranTogether(timeline: TimedAdapter["timeline"]): boolean {
+    const spans: Array<{ agentId: string; start: number; finish: number }> = [];
+    const open = new Map<string, number>();
+    for (const entry of timeline) {
+      if (entry.event === "start") {
+        open.set(entry.agentId, entry.at);
+        continue;
+      }
+      const start = open.get(entry.agentId);
+      if (start === undefined) continue;
+      open.delete(entry.agentId);
+      spans.push({ agentId: entry.agentId, start, finish: entry.at });
+    }
+    return spans.some((a) =>
+      spans.some((b) => a.agentId !== b.agentId && a.start < b.finish && b.start < a.finish),
+    );
+  }
+
   it("still runs different workers at the same time", async () => {
     const adapter = new TimedAdapter();
     const { operator } = await setup(adapter, [profile("worker-a"), profile("worker-b")]);
 
-    const started = Date.now();
     await operator.run(["alpha", "beta"]);
-    const elapsed = Date.now() - started;
 
     const agents = new Set(adapter.timeline.map((entry) => entry.agentId));
     expect(agents.size).toBe(2);
-    // Two 120ms runs in parallel, not one after the other.
-    expect(elapsed).toBeLessThan(2000);
+    // Asserted on the recorded spans, not the clock. This used to require the
+    // whole run inside 2000ms for two 120ms tasks, which measured git — a
+    // worktree takes seconds on Windows — and left a margin of about 350ms.
+    // That is the flaky test bugfixy.md C3 could not name: it passes until the
+    // machine is busy, which is exactly when someone reruns instead of reading.
+    expect(ranTogether(adapter.timeline)).toBe(true);
   });
 
   it("reports outcomes in the order the tasks were given", async () => {

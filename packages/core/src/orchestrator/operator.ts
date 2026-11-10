@@ -1,6 +1,6 @@
 import { simpleGit } from "simple-git";
 import type { AgentDescriptor, TaskSpec } from "@maya/shared-types";
-import type { AgentAdapter } from "../adapters/adapter.js";
+import type { AgentAdapter, AgentRunResult } from "../adapters/adapter.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
 import { withRunLimits } from "../adapters/watchdog.js";
 import type { EventBus } from "../bus/event-bus.js";
@@ -13,9 +13,10 @@ import { ContextWriter } from "../persistence/context-writer.js";
 import type { ConflictResolver } from "./conflict-resolver.js";
 import { publishAgentEvent } from "./secret-channel.js";
 import { Planner, describePlan, type Plan } from "./planner.js";
+import { QuestionAnswerer, type AnsweredQuestion } from "./question-answerer.js";
 import { SummaryGenerator } from "./summary-generator.js";
 import type { TaskQueue } from "./task-queue.js";
-import { withSecretChannel } from "./task-runner.js";
+import { describeAnswers, withAgentChannels } from "./task-runner.js";
 
 export interface OperatorDeps {
   repo: RepoManager;
@@ -61,6 +62,7 @@ export class Operator {
   private readonly contextWriter: ContextWriter;
   private readonly summaries: SummaryGenerator;
   private readonly planner: Planner;
+  private readonly answerer: QuestionAnswerer;
 
   constructor(private readonly deps: OperatorDeps) {
     this.worktrees = new WorktreeManager(deps.repo.git, deps.repo.paths);
@@ -81,6 +83,7 @@ export class Operator {
         : undefined;
     this.summaries = new SummaryGenerator(thinking);
     this.planner = new Planner(thinking);
+    this.answerer = new QuestionAnswerer(thinking);
   }
 
   /**
@@ -175,6 +178,42 @@ export class Operator {
     return { outcomes, merged, held };
   }
 
+  /**
+   * Has the Operator answer what a worker asked, and puts both in the log.
+   *
+   * The answer is published whether or not the worker can be resumed to hear
+   * it: the question is in the chat either way, and a question with no
+   * visible answer looks like Maya swallowed it. Where no Operator is
+   * configured the answer says so plainly rather than inventing a ruling.
+   */
+  private async answerQuestions(
+    asked: Array<{ questionId: string; question: string }>,
+    task: TaskSpec,
+    profile: WorkerProfile,
+  ): Promise<AnsweredQuestion[]> {
+    const siblings = this.deps.queue
+      .all()
+      .filter((other) => other.id !== task.id)
+      .map((other) => other.instruction);
+
+    const answers = await this.answerer.answer(asked, {
+      instruction: task.instruction,
+      askedBy: profile.displayName,
+      ...(siblings.length > 0 ? { siblingTasks: siblings } : {}),
+    });
+
+    for (const answer of answers) {
+      this.deps.bus.publish("main", profile.id, "operator_answer", {
+        type: "operator_answer",
+        questionId: answer.questionId,
+        agentId: profile.id,
+        answer: answer.answer,
+        answered: answer.answered,
+      });
+    }
+    return answers;
+  }
+
   private workerFor(index: number): WorkerProfile {
     const workers = this.deps.workers;
     if (workers.length === 0) throw new Error("no workers configured");
@@ -243,33 +282,65 @@ export class Operator {
 
     const adapter: AgentAdapter = this.deps.registry.get(profile.tool);
     const transcript: string[] = [];
+    let asked: Array<{ questionId: string; question: string }> = [];
 
-    const handle = withRunLimits(
-      await adapter.start({
-        agentId: profile.id,
-        cwd: worktree.path,
-        prompt: withSecretChannel(task.instruction),
-        ...(profile.model ? { model: profile.model } : {}),
-        ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
-        ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
-        ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
-        ...(profile.maxBudgetUsd !== undefined ? { maxBudgetUsd: profile.maxBudgetUsd } : {}),
-      }),
-      {
-        stallTimeoutSec: profile.stallTimeoutSec,
-        ...(profile.maxRunSeconds !== undefined ? { maxRunSeconds: profile.maxRunSeconds } : {}),
-        ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
-      },
-    );
+    const runAgent = async (prompt: string, resumeSessionId?: string): Promise<AgentRunResult> => {
+      const handle = withRunLimits(
+        await adapter.start({
+          agentId: profile.id,
+          cwd: worktree.path,
+          prompt,
+          ...(resumeSessionId ? { resumeSessionId } : {}),
+          ...(profile.model ? { model: profile.model } : {}),
+          ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
+          ...(profile.deniedTools ? { deniedTools: profile.deniedTools } : {}),
+          ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
+          ...(profile.maxBudgetUsd !== undefined ? { maxBudgetUsd: profile.maxBudgetUsd } : {}),
+        }),
+        {
+          stallTimeoutSec: profile.stallTimeoutSec,
+          ...(profile.maxRunSeconds !== undefined ? { maxRunSeconds: profile.maxRunSeconds } : {}),
+          ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
+        },
+      );
 
-    handle.onEvent((event) => {
-      // The transcript comes back from the publisher, which has already taken
-      // the user's private lines out of it.
-      const recorded = publishAgentEvent(this.deps.bus, profile.id, event);
-      if (recorded.transcript) transcript.push(recorded.transcript);
-    });
+      handle.onEvent((event) => {
+        // The transcript comes back from the publisher, which has already taken
+        // the user's private lines out of it, and tells us what the worker
+        // asked the Operator.
+        const recorded = publishAgentEvent(this.deps.bus, profile.id, event);
+        if (recorded.transcript) transcript.push(recorded.transcript);
+        asked.push(...recorded.questions);
+      });
 
-    const result = await handle.waitForCompletion();
+      return handle.waitForCompletion();
+    };
+
+    let result = await runAgent(withAgentChannels(task.instruction));
+
+    // A worker that asked the Operator something gets an answer back, and one
+    // more turn to act on it.
+    //
+    // It has to be a second turn: a wrapped CLI is a one-shot subprocess with
+    // no way to take input mid-run, so there is nowhere to deliver an answer
+    // while it is still working. Resuming its session is what makes this a
+    // conversation rather than a question shouted into the log — and only for
+    // an adapter that can resume, which is why `resumable` is probed.
+    if (asked.length > 0) {
+      const answers = await this.answerQuestions(asked, task, profile);
+      // Only pay for a second turn when there is something to deliver. With
+      // no Operator configured every answer is "nobody could answer", and
+      // resuming to say so costs a run and tells the worker nothing it could
+      // not have assumed. The answer is in the log for the person either way.
+      const worthResuming = answers.some((answer) => answer.answered);
+      const resumable = adapter.capabilities.resumable && result.sessionId;
+      if (worthResuming && resumable && result.ok) {
+        // Cleared first: a resumed worker may ask again, and a loop of
+        // question-and-resume would spend without a bound. One round.
+        asked = [];
+        result = await runAgent(describeAnswers(answers), result.sessionId);
+      }
+    }
 
     this.contextWriter.write({
       agent,

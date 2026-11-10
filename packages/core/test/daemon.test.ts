@@ -32,9 +32,21 @@ async function startDaemon() {
   return { paths, bus, daemon, lock };
 }
 
-function collect(url: string, until: number): Promise<BusEvent[]> {
-  return new Promise((resolve, reject) => {
+/**
+ * Opens a socket and gathers `until` events.
+ *
+ * `open` resolves once the handshake is done, so a test can publish at the
+ * moment the client is actually listening. It used to sleep 100ms and hope,
+ * which is the shape that makes a suite fail only when the machine is busy.
+ */
+function collect(url: string, until: number): { open: Promise<void>; events: Promise<BusEvent[]> } {
+  let announceOpen: () => void = () => undefined;
+  const open = new Promise<void>((resolve) => {
+    announceOpen = resolve;
+  });
+  const events = new Promise<BusEvent[]>((resolve, reject) => {
     const socket = new WebSocket(url);
+    socket.on("open", () => announceOpen());
     const seen: BusEvent[] = [];
     const timer = setTimeout(() => {
       socket.close();
@@ -53,6 +65,7 @@ function collect(url: string, until: number): Promise<BusEvent[]> {
     });
     socket.on("error", reject);
   });
+  return { open, events };
 }
 
 describe("Daemon", () => {
@@ -69,15 +82,15 @@ describe("Daemon", () => {
     const { bus, daemon } = await startDaemon();
     const pending = collect(`${daemon.address.replace("http", "ws")}/ws?since=0`, 1);
 
-    // give the socket a moment to attach before publishing
-    await new Promise((r) => setTimeout(r, 100));
+    // Wait for the handshake, not for a guess at how long it takes.
+    await pending.open;
     bus.publish("main", "worker-a", "text", {
       type: "text",
       agentId: "worker-a",
       text: "hello from the worker",
     });
 
-    const seen = await pending;
+    const seen = await pending.events;
     expect((seen[0]?.payload as { text: string }).text).toBe("hello from the worker");
   });
 
@@ -88,7 +101,8 @@ describe("Daemon", () => {
     bus.publish("main", "a", "text", { type: "text", agentId: "a", text: "two" });
 
     // A client that already rendered event #1 reconnects and asks for the rest.
-    const seen = await collect(`${daemon.address.replace("http", "ws")}/ws?since=${first.id}`, 1);
+    const seen = await collect(`${daemon.address.replace("http", "ws")}/ws?since=${first.id}`, 1)
+      .events;
 
     expect(seen).toHaveLength(1);
     expect((seen[0]?.payload as { text: string }).text).toBe("two");

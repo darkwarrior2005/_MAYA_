@@ -39,6 +39,11 @@ const OPERATOR_EVENT_TYPES = new Set([
   "conflict_prompt",
   "conflict_resolved",
   "merge_result",
+  // A worker's question to the Operator, and the reply, are the Operator's
+  // conversation. Shown in its pane so the exchange reads in one place rather
+  // than split between the worker's pane and the Operator's.
+  "agent_question",
+  "operator_answer",
 ]);
 
 /**
@@ -275,6 +280,10 @@ export function formatEvent(event: BusEvent): string | null {
       return `needs a decision: ${payload.question}`;
     case "conflict_resolved":
       return `decided: ${payload.chosen}`;
+    case "agent_question":
+      return `?? ${payload.agentId} asks: ${payload.question}`;
+    case "operator_answer":
+      return payload.answered ? `-> ${payload.answer}` : `-> no answer: ${payload.answer}`;
     default:
       return `${who}: ${event.type}`;
   }

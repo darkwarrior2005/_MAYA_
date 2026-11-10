@@ -8,13 +8,12 @@
 // it is drawing on, which is how a pane frame ends up wrapping.
 //
 // Needs the optional node-pty package.
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needPty } from "./need-pty.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
-const { spawn: ptySpawn } = require_("node-pty");
+const { spawn: ptySpawn } = needPty("column-width.mjs");
 const { displayWidth } = await import(
   new URL("packages/cli/dist/tui/width.js", new URL("../../", import.meta.url)).href
 );

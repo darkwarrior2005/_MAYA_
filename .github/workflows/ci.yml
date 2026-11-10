@@ -1,0 +1,77 @@
+#  Maya on both platforms.
+#
+#  Everything in Maya was built and tested on Windows. The code avoids platform
+#  assumptions, but until this workflow runs that is reasoning rather than
+#  evidence — which is why `docs/PLAN.md` lists "nothing has been run on Linux"
+#  as the open item that matters most. This is the thing that closes it, and
+#  that keeps it closed.
+#
+#  The verification harnesses in tools/verify/ that drive a real pseudoconsole
+#  need the optional node-pty, which has no Linux prebuild. They print SKIPPED
+#  and exit 0 there (see tools/verify/need-pty.mjs), so the three that need no
+#  terminal still run on both platforms.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Report both platforms even when one fails: "it broke on Linux" is only
+      # useful next to whether it also broke on Windows.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          # better-sqlite3 ^13 has prebuilds for Node 25 (ABI 141); an older
+          # major tries to compile and wants a C++ toolchain.
+          node-version: 25
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      # The harnesses that need no pseudoconsole. These exercise a real
+      # daemon over a real socket, the MCP server over stdio, and the packaged
+      # bundle driven from an unrelated directory — the seams unit tests paper
+      # over, and the places a platform difference would actually show.
+      - name: Verify the MCP server
+        run: node tools/verify/mcp.mjs
+
+      - name: Verify the agent probes
+        run: node tools/verify/agents.mjs
+
+      - name: Verify the packaged bundle
+        run: pnpm package && node tools/verify/packaged.mjs
+
+      # Reports SKIPPED and exits 0 where node-pty is unavailable, so this step
+      # is a free pass on Linux and a real check on Windows.
+      - name: Verify the panes
+        run: node tools/verify/panes.mjs
+
+      - name: Verify the column widths
+        run: node tools/verify/column-width.mjs

@@ -7,7 +7,12 @@ import { BranchManager } from "../git/branch-manager.js";
 import { MergeService } from "../git/merge-service.js";
 import type { RepoManager } from "../git/repo-manager.js";
 import { ContextWriter } from "../persistence/context-writer.js";
-import { SECRET_CHANNEL_BRIEFING, publishAgentEvent } from "./secret-channel.js";
+import {
+  OPERATOR_CHANNEL_BRIEFING,
+  SECRET_CHANNEL_BRIEFING,
+  publishAgentEvent,
+} from "./secret-channel.js";
+import type { AnsweredQuestion } from "./question-answerer.js";
 
 export interface TaskRunInput {
   instruction: string;
@@ -81,7 +86,7 @@ export class TaskRunner {
       await this.adapter.start({
         agentId: input.agent.id,
         cwd: this.repo.repoRoot,
-        prompt: withSecretChannel(input.instruction),
+        prompt: withAgentChannels(input.instruction),
         ...(input.agent.model ? { model: input.agent.model } : {}),
         ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),
         ...(input.deniedTools ? { deniedTools: input.deniedTools } : {}),
@@ -97,14 +102,30 @@ export class TaskRunner {
       },
     );
 
+    const asked: Array<{ questionId: string; question: string }> = [];
     handle.onEvent((event) => {
       // The transcript comes back from the publisher, which has already taken
       // the user's private lines out of it.
       const recorded = publishAgentEvent(this.bus, input.agent.id, event);
       if (recorded.transcript) transcript.push(recorded.transcript);
+      asked.push(...recorded.questions);
     });
 
     const result = await handle.waitForCompletion();
+
+    // `maya run` is one agent and no Operator, so there is nobody to answer.
+    // Say that in the log rather than leaving the question unanswered on
+    // screen: the worker was told the Operator would reply, and a promise the
+    // log does not keep is worse than a plain "no Operator here".
+    for (const question of asked) {
+      this.bus.publish("main", input.agent.id, "operator_answer", {
+        type: "operator_answer",
+        questionId: question.questionId,
+        agentId: input.agent.id,
+        answer: NO_OPERATOR,
+        answered: false,
+      });
+    }
 
     this.contextWriter.write({
       agent: input.agent,
@@ -169,14 +190,42 @@ export class TaskRunner {
 }
 
 /**
- * Agents cannot use the secret channel they were never told about, so the
- * briefing rides along with every instruction.
+ * Agents cannot use a channel they were never told about, so both briefings
+ * ride along with every instruction.
+ *
+ * The Operator one comes second deliberately: read in order, it says "reach
+ * the human for what only they can decide, and the Operator for everything
+ * else", which is the behaviour wanted. A worker briefed only on `@user`
+ * interrupts the person over things the Operator could have settled.
  */
-export function withSecretChannel(instruction: string): string {
+export function withAgentChannels(instruction: string): string {
   return `${instruction}
 
 ---
-${SECRET_CHANNEL_BRIEFING}`;
+${SECRET_CHANNEL_BRIEFING}
+
+${OPERATOR_CHANNEL_BRIEFING}`;
+}
+
+/** Kept under the old name: adapter plugins and tests import it. */
+export const withSecretChannel = withAgentChannels;
+
+export const NO_OPERATOR =
+  "No Operator is running this task (`maya run` drives one agent on its own), so this question went unanswered. Use `maya start` for a session with an Operator.";
+
+/** How the Operator's answers are handed back to the worker that asked. */
+export function describeAnswers(answers: AnsweredQuestion[]): string {
+  const lines = ["The Operator answered what you asked:", ""];
+  for (const answer of answers) {
+    lines.push(`You asked: ${answer.question}`);
+    lines.push(`Operator: ${answer.answer}`);
+    lines.push("");
+  }
+  lines.push(
+    "Carry on with the task from here. If an answer changes what you have",
+    "already done, fix it; say in your summary what you changed and why.",
+  );
+  return lines.join("\n");
 }
 
 function firstLine(text: string): string {

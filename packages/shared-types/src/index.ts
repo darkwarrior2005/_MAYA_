@@ -81,7 +81,9 @@ export type ChatEventType =
   | "task_completed"
   | "conflict_prompt"
   | "conflict_resolved"
-  | "merge_result";
+  | "merge_result"
+  | "agent_question"
+  | "operator_answer";
 
 export type ChatPayload =
   | { type: "user_message"; text: string; replyToEventId?: EventId }
@@ -90,7 +92,23 @@ export type ChatPayload =
   | { type: "task_completed"; taskId: TaskId; agentId: AgentId; ok: boolean; summary: string }
   | { type: "conflict_prompt"; promptId: string; question: string; options: ConflictOption[] }
   | { type: "conflict_resolved"; promptId: string; chosen: string; custom: boolean }
-  | { type: "merge_result"; taskId: TaskId; branch: string; merged: boolean; conflicts: string[] };
+  | { type: "merge_result"; taskId: TaskId; branch: string; merged: boolean; conflicts: string[] }
+  /**
+   * A worker asking the Operator something, via an `@operator` line in its
+   * own output. The brief says sub-agents ask the Operator for information;
+   * before this the only agent-initiated channel went to the human, which is
+   * the thing the Operator exists to avoid.
+   */
+  | { type: "agent_question"; questionId: string; agentId: AgentId; question: string }
+  /** The Operator's reply, from its own adapter. */
+  | {
+      type: "operator_answer";
+      questionId: string;
+      agentId: AgentId;
+      answer: string;
+      /** False when no Operator adapter was available to answer. */
+      answered: boolean;
+    };
 
 export interface ConflictOption {
   id: string;

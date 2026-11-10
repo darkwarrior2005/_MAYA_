@@ -7,15 +7,14 @@
 // CLI to be logged in. Needs the optional node-pty package.
 
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needPty } from "./need-pty.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
-const { spawn: ptySpawn } = require_("node-pty");
+const { spawn: ptySpawn } = needPty("live-run.mjs");
 const MAYA = join(repoRoot, "packages/cli/dist/main.js");
 const ESC = String.fromCharCode(27);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

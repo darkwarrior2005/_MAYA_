@@ -8,15 +8,14 @@
 // itself, which is what makes the resize checks meaningful.
 
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needPty } from "./need-pty.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
-const { spawn: ptySpawn } = require_("node-pty");
+const { spawn: ptySpawn } = needPty("panes.mjs");
 
 const MAYA = join(repoRoot, "packages/cli/dist/main.js");
 const SEED = join(repoRoot, "tools/verify/seed-daemon.mjs");

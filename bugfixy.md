@@ -73,7 +73,7 @@ result. Three things make this safe rather than magic:
 **Effort.** Moderate. The adapter, bus, prompt flow and both UIs already exist;
 this is a new module plus a flag.
 
-### A2 — A worker has no way to ask the Operator anything — **OPEN**
+### A2 — A worker has no way to ask the Operator anything — **FIXED**
 
 **Evidence.** The only agent-initiated channel is the `@user` marker, which
 goes to the user. There is no worker→Operator path in `core/src/orchestrator`.
@@ -261,7 +261,7 @@ reaches for `@user`. If it does not, the briefing in
 `SECRET_CHANNEL_BRIEFING` needs to be stronger or placed differently in the
 prompt. Cheap to test as part of a run that was happening anyway.
 
-### C3 — One test is flaky and unidentified — **OPEN**
+### C3 — One test is flaky and unidentified — **FIXED**
 
 **Evidence.** One of 144 failed once, during a run where the machine was busy
 with leftover daemons; 144/144 and then 151/151 on more than ten subsequent

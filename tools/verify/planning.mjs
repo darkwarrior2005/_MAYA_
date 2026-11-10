@@ -6,16 +6,15 @@
 // Needs the optional node-pty package. The agents are stand-ins configured as
 // project plugins, so this costs nothing and is deterministic; what it
 // exercises is the planning, the confirmation and the dispatch.
-import { createRequire } from "node:module";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needPty } from "./need-pty.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
-const { spawn: ptySpawn } = require_("node-pty");
+const { spawn: ptySpawn } = needPty("planning.mjs");
 const MAYA = join(repoRoot, "packages/cli/dist/main.js");
 
 const ESC = String.fromCharCode(27);

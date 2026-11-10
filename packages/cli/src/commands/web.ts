@@ -39,7 +39,9 @@ export function registerWeb(program: Command): void {
         // the view in two, which is the opposite of the point.
         const address = `http://127.0.0.1:${existing.port}`;
         console.log(`[maya] already running for this project — ${address}`);
-        if (options.open !== false) await openBrowser(address);
+        if (options.open !== false && !(await openBrowser(address))) {
+          console.log('[maya] no browser launcher here — open the address above yourself');
+        }
         return;
       }
 
@@ -83,7 +85,9 @@ export function registerWeb(program: Command): void {
       }
       console.log("[maya] Ctrl-C to stop");
 
-      if (options.open !== false) await openBrowser(daemon.address);
+      if (options.open !== false && !(await openBrowser(daemon.address))) {
+        console.log('[maya] no browser launcher here — open the address above yourself');
+      }
 
       const shutdown = async (): Promise<void> => {
         await daemon.stop();

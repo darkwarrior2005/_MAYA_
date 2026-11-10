@@ -11,10 +11,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needPty } from "./need-pty.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const { spawn: ptySpawn } = needPty("conflict.mjs");
 const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
-const { spawn: ptySpawn } = require_("node-pty");
 const { simpleGit } = require_("simple-git");
 const core = await import(new URL("packages/core/dist/index.js", new URL("../../", import.meta.url)).href);
 const { EventStore, EventBus, Daemon, MayaPaths, loadConfig, DeferredConflictResolver } = core;
