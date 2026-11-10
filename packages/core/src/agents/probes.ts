@@ -220,7 +220,7 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
       title: "How quickly it answers",
       outcome: wrote ? "pass" : "skipped",
       detail: wrote
-        ? `${(edit.ms / 1000).toFixed(1)}s for a one-line task`
+        ? `${(edit.ms / 1000).toFixed(1)}s for a one-line task, on one run`
         : `not measured: the run failed after ${(edit.ms / 1000).toFixed(1)}s, which is not a speed`,
       ...(wrote ? { ms: edit.ms } : {}),
       live: true,
@@ -236,7 +236,7 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
       title: "It says what it spent",
       outcome: measuredCost ? "pass" : wrote ? "fail" : "skipped",
       detail: measuredCost
-        ? `${figures} tokens${spent?.costUsd === undefined ? "" : `, $${spent.costUsd.toFixed(2)}`}`
+        ? `${figures} tokens${spent?.costUsd === undefined ? "" : `, $${spent.costUsd.toFixed(2)}`}, on one run`
         : wrote
           ? "reported no usage, so its share of the bill cannot be shown"
           : "not measured: the run failed, so an empty bill proves nothing",

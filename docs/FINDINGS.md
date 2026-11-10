@@ -232,6 +232,16 @@ check reported a pass. The expired Claude Code session passed it twice.
 `AdapterHealth` now carries `verified`, and an assumed login is amber rather
 than green. A token in the environment is a fact and stays green.
 
+**One live run is not a measurement, and the tools differ in how much that
+matters.** Three runs of the identical one-line prompt, 10 November 2026:
+Copilot took 11.5s / 30,551 tokens, then 11.4s / 30,566, then **18.7s /
+46,199** — 51% more tokens for the same instruction. Antigravity took 54.9s,
+60.1s, 55.4s for 41,284 / 41,290 / 41,285 tokens, near-deterministic. So a
+Copilot figure on the card is one draw from a wide distribution and an
+Antigravity one is close to a constant, and the card cannot tell them apart
+from a single sample. The detail lines say "on one run" for that reason.
+Averaging would need repeat runs, and every Copilot run is a premium request.
+
 **A score whose floor sits on the observed value is a guessed score.** Speed
 ran 5s → 100, 60s → 0, picked before anyone had run the probes. Antigravity
 then finished a one-line task in 60.1s and scored **0**, which reads as broken
