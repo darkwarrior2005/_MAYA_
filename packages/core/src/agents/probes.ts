@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -294,6 +303,17 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
  * leaves the listing identical, and the first version of this probe passed
  * one that did exactly that.
  */
+/**
+ * What the tree looks like, by content rather than by the clock.
+ *
+ * This used to record `size:mtimeMs`, which misses an edit that keeps the
+ * same length and lands inside one timestamp tick — and the probe workspace
+ * is exactly where that happens, because the two runs are seconds apart at
+ * most. Windows is the worst case: the system clock it stamps writes from
+ * advances about every 15ms, so two writes in the same tick are
+ * indistinguishable. Hashing the bytes costs nothing on a handful of
+ * one-line files and cannot be fooled by either.
+ */
 function snapshotTree(root: string): Map<string, string> {
   const seen = new Map<string, string>();
   const walk = (dir: string, prefix: string): void => {
@@ -304,12 +324,26 @@ function snapshotTree(root: string): Map<string, string> {
         walk(path, key);
         continue;
       }
-      const stats = statSync(path);
-      seen.set(key, `${stats.size}:${stats.mtimeMs}`);
+      seen.set(key, fingerprint(path));
     }
   };
   walk(root, "");
   return seen;
+}
+
+function fingerprint(path: string): string {
+  try {
+    return createHash("sha1").update(readFileSync(path)).digest("hex");
+  } catch {
+    // Unreadable, or gone between the listing and the read. Fall back to what
+    // can still be seen, so a file the agent locked still counts as present.
+    try {
+      const stats = statSync(path);
+      return `unread:${stats.size}:${stats.mtimeMs}`;
+    } catch {
+      return "unread";
+    }
+  }
 }
 
 function changedSince(before: Map<string, string>, after: Map<string, string>): string[] {

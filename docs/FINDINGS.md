@@ -297,7 +297,7 @@ it as its own line: having git is not the same as being able to commit with it.
 **GitHub's Windows runners set `core.autocrlf=true` globally.** A file written
 as `docs
 `, committed and merged, came back out of the checkout as
-`docs
+`docs
 `, and two content assertions failed there and nowhere else. Test
 repositories set `core.autocrlf=false` so what a test reads back does not
 depend on whose machine it ran on.
@@ -316,6 +316,29 @@ short name.
 `.maya/config.json` and died with ENOENT — three steps and one confusing
 stack trace away from the missing git identity that actually caused it. It
 checks the exit code and prints the output now.
+
+**`size:mtimeMs` is not a file fingerprint, and Windows is where that shows.**
+The restraint probe compares the tree before and after a run. Two writes
+inside one clock tick carry the same timestamp — the Windows system clock
+that stamps them advances about every 15ms — so a same-length edit between
+two fast runs was invisible, and the agents harness failed on Windows CI
+while passing on Linux and on a developer machine, where the runs happened to
+straddle a tick. `snapshotTree` hashes the bytes now. What no before/after
+comparison can ever see is a rewrite with *identical* content, so the
+harness's reckless stand-in leaves a freshly named file each run instead of
+rewriting one: a probe should not be asserted to catch the undetectable.
+
+**A pty is not a terminal.** A cursor-position report (`ESC[6n`) is answered
+by whatever emulates the screen, not by the pty. On Windows ConPTY is an
+emulator and answers, which is what makes `tools/verify/column-width.mjs` a
+real check there; on Linux the kernel hands over a pair of file descriptors
+with nothing behind them and the query goes into the void. Node-pty does
+build on a Linux CI runner — `panes.mjs` ran 23/23 there — so the harness
+could not be skipped on node-pty's absence alone. With nothing answering it
+reports SKIPPED and exits 0, because calling all fourteen samples a mismatch
+would be a statement about `width.ts` that no measurement supports. A
+*partial* answer is still a failure: an emulator that replied once can reply
+fourteen times.
 
 ## Tooling and versions
 

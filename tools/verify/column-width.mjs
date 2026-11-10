@@ -92,6 +92,23 @@ for (const line of out.split(/\r?\n/)) {
   if (match) measured.set(match[1], Number(match[2]));
 }
 
+// Nothing answered at all. A pty is not a terminal: the cursor-position
+// report comes from whatever emulates the screen, and on Linux the kernel
+// hands over a pair of file descriptors with nothing behind them, so ESC[6n
+// goes into the void. On Windows ConPTY *is* an emulator and answers, which
+// is why this check means something there. With no ground truth to compare
+// against, calling every sample a mismatch would be a lie about width.ts.
+//
+// A partial answer is still a failure, below: if the emulator replied once it
+// can reply fourteen times, and silence after that is a real regression.
+if (measured.size === 0) {
+  console.log(
+    "SKIPPED  nothing answered ESC[6n, so this terminal reports no cursor position",
+  );
+  console.log("         (expected on Linux; on Windows ConPTY answers and this check runs)");
+  process.exit(0);
+}
+
 console.log("sample".padEnd(26), "terminal", "maya");
 let wrong = 0;
 for (const [label, text] of SAMPLES) {
