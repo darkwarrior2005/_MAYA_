@@ -169,13 +169,16 @@ export const PLATFORM_NOTES: PlatformNote[] = [
   {
     id: "linux-unverified",
     area: "maya",
-    title: "Nothing has ever been run on Linux",
+    title: "Maya is driven on Windows and tested on Linux by CI",
     detail:
-      "Every command, test and harness in this project has run on Windows " +
-      "only. The code avoids platform assumptions, but that is reasoning, not " +
-      "evidence.",
-    mitigation: "Run the suite and tools/verify/ on Linux before trusting it there.",
-    severity: "open",
+      "Day-to-day development happens on Windows. Linux is covered by CI on " +
+      "every push — the suite, the MCP server, the agent probes, the packaged " +
+      "bundle and the pane view all pass on ubuntu-latest — rather than by " +
+      "anyone working there.",
+    mitigation:
+      "Both platforms run in .github/workflows/ci.yml, so a platform fault " +
+      "surfaces on the next push instead of being argued about.",
+    severity: "handled",
   },
   {
     id: "operator-cost",

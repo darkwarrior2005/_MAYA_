@@ -487,14 +487,19 @@ function platformNotes(config: MayaConfig): PlatformNote[] {
   const notes = [...PLATFORM_NOTES];
   if (process.platform !== "win32") {
     notes.push({
-      id: "linux-unverified",
+      id: "linux-ci-only",
       area: "maya",
-      title: "Maya has never been run on this platform",
+      title: "Maya is developed on Windows and tested here by CI",
       detail:
-        "Everything in Maya was built and tested on Windows. The code avoids " +
-        "platform assumptions, but that is reasoning rather than evidence.",
-      mitigation: "Run the test suite and tools/verify/ here and report what breaks.",
-      severity: "open",
+        "The suite, the MCP server, the agent probes, the packaged bundle and " +
+        "the pane view all pass on ubuntu-latest on every push, so this is not " +
+        "untrodden ground — but the day-to-day driving happens on Windows, and " +
+        "every platform fault found so far was found by that CI run rather than " +
+        "by reasoning about the code.",
+      mitigation:
+        "Run pnpm test and tools/verify/ here if something looks wrong; node-pty " +
+        "has no Linux prebuild, so the pty transport needs a C++ toolchain.",
+      severity: "watch",
     });
   }
   if ((config.adapters ?? []).length > 0) {

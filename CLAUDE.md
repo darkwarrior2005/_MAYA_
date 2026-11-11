@@ -12,8 +12,10 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-All six phases of `docs/PLAN.md` are built. What is left is listed under
-"Still open" there — chiefly that **nothing has been run on Linux**.
+All six phases of `docs/PLAN.md` are built, and CI runs the suite on
+`ubuntu-latest` and `windows-latest` — both green, so Linux is verified rather
+than argued. What is left is listed under "Still open" there: it needs a live
+agent run, not code.
 
 ## Commands
 

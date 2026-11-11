@@ -5,8 +5,9 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-09: **Phases 0–6 complete.** The plan is built.
-What is left is in "Still open" at the end.
+Status as of 2026-11-11: **Phases 0–6 complete.** The plan is built, and CI is
+green on Linux and Windows. What is left is in "Still open" at the end; it
+needs a live agent run rather than code.
 
 ---
 
@@ -153,12 +154,33 @@ start cleared the lock and moved the orphaned task to blocked; and a project
 plugin loaded by `maya doctor` and used by `maya run` to take a task through
 branch, commit and merge.
 
+## Settled
+
+**Linux runs Maya.** This was the open item that mattered most, and it is now
+a fact rather than an argument. `.github/workflows/ci.yml` runs the suite on
+`ubuntu-latest` and `windows-latest`, and both legs are green: install, build,
+lint, 240 tests, the MCP server (17/17), the agent probes (24/24), the
+packaged bundle (12/12) and the panes (23/23). Two things the first runs
+turned up are worth keeping in mind:
+
+- node-pty **does** build on a Linux runner, so the pane harness is a real
+  check there too. It stays an optional dependency because requiring it would
+  put a C++ toolchain in the path of every Linux install, not because the
+  terminal code is unexercised.
+- `column-width.mjs` is Windows-only in substance. It asks the terminal for a
+  cursor-position report, which comes from whatever emulates the screen;
+  ConPTY answers, a bare Linux pty has nothing behind it to answer. It reports
+  SKIPPED there rather than claiming fourteen width mismatches.
+
+Keeping it green is the point of the workflow. `docs/FINDINGS.md` records what
+the first three runs cost to learn.
+
 ## Still open
 
-- **Linux is unverified.** Everything was built and run on Windows. Run the
-  suite and `tools/verify/packaged.mjs` on Linux before calling Maya
-  cross-platform. `fs.watch` recursive needs Node 20.13 there, and node-pty
-  has no Linux prebuild (it is optional for that reason).
+- **No live run of Codex.** The adapter and its JSONL parser were built from
+  OpenAI's published interface, not from a session — the one adapter of the
+  four never driven against its real CLI. `npm i -g @openai/codex`,
+  `codex login`, then `maya agents -d <dir> --live` settles it.
 - **The `@user` marker is untested with a live agent.** The plumbing is
   tested, but whether a model reaches for it when it should is a prompting
   question. Watch it on the next live run.

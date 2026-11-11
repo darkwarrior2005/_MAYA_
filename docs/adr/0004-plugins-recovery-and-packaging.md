@@ -71,3 +71,12 @@ avoids platform assumptions and the native dependencies are either optional
 (better-sqlite3), but that is reasoning, not evidence. Someone should run the
 suite and `tools/verify/packaged.mjs` on Linux before Maya is called
 cross-platform.
+
+> **Settled, 2026-11-11.** `.github/workflows/ci.yml` does this on every push
+> and both legs pass, `tools/verify/packaged.mjs` among them (12/12 on Linux).
+> The reasoning above held up in substance but not in its predictions: what
+> broke was a git identity missing on a fresh runner, `core.autocrlf` on
+> GitHub's Windows images, a tilde in an 8.3 path defeating Vite's resolver,
+> and two checks measuring the machine rather than Maya. `docs/FINDINGS.md`
+> has each one. Kept as written, because the point of an ADR is what was known
+> at the time.

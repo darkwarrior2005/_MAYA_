@@ -1,5 +1,7 @@
 # Maya
 
+[![ci](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml/badge.svg)](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml)
+
 Several AI coding CLIs working together on one repository, under one **Operator**
 agent that assigns the work, keeps the git history, and has the only say over
 what lands. Workers create branches; they never merge.
@@ -287,8 +289,13 @@ node tools/verify/packaged.mjs     # the bundle, driven from an unrelated cwd
 node tools/verify/panes.mjs        # 23 checks in a real pseudoconsole
 ```
 
-The pseudoconsole harnesses need the optional `node-pty`, which has no Linux
-prebuild. Without it they print `SKIPPED` and exit 0 rather than failing.
+The pseudoconsole harnesses need the optional `node-pty`. It ships prebuilds
+for Windows and macOS only, so on Linux it compiles from source where a C++
+toolchain is available and is simply absent where one is not — which is why it
+is optional. Without it these harnesses print `SKIPPED` and exit 0 rather than
+failing. `column-width.mjs` skips on Linux even with node-pty present: it asks
+the terminal for a cursor-position report, and a bare pty has no emulator
+behind it to answer.
 
 For hot reload on the web client, run a daemon with `maya web`, then:
 
@@ -310,8 +317,9 @@ MAYA_PORT=<its port> pnpm --filter @maya/web-client dev
   bug, not a style question.
 - **`bugfixy.md`** — the issues found by reviewing the build, and their state.
 
-**Known gap:** Maya was built and tested on Windows. The code avoids platform
-assumptions and `.github/workflows/ci.yml` runs the suite on `ubuntu-latest`
-and `windows-latest`, but until that workflow has run, Linux support is
-reasoning rather than evidence. If `./install.sh` breaks on your machine, that
-is worth an issue.
+**Platforms:** Maya was built on Windows, and `.github/workflows/ci.yml` runs
+the suite on `ubuntu-latest` and `windows-latest` on every push. Both legs are
+green — install, build, lint, 240 tests, and the MCP, agent-probe, packaged-
+bundle and pane harnesses — so Linux is tested rather than assumed. What CI
+cannot cover is your particular machine: if `./install.sh` or a login breaks on
+it, that is worth an issue.

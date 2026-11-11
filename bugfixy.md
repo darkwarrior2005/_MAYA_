@@ -7,11 +7,13 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status: 182 tests, lint clean, seven verification harnesses passing, on Windows.
+Status: 240 tests, lint clean, every verification harness passing, and CI green
+on `ubuntu-latest` and `windows-latest`.
 
-**Update.** A1, A3, B1, B2 and D1–D3 are now fixed, and an MCP server plus
-two agent skills have been added. What is left is marked **OPEN** below; the
-fixed entries are kept for the reasoning, with what was done.
+**Update.** A1, A2, A3, B1, B2, B4, C1 and D1–D3 are now fixed; an MCP server,
+two agent skills and a fourth agent (OpenAI Codex) have been added. What is
+left is marked **OPEN** below — B3, C2, and a live run of Codex. The fixed
+entries are kept for the reasoning, with what was done.
 
 Building A1 turned up two more defects, both now fixed and both invisible to
 the unit tests because they only appear in a real repository:
@@ -38,6 +40,10 @@ other open issue is smaller than that one.
 Priorities: **A1–A3** make Maya match its own brief. **B1–B2** are correctness
 and cost. **C1** is the one that decides whether "cross-platform" is a claim or
 a guess.
+
+*That was written before any of it was done. All of it is now fixed, C1
+included; what is left is B3, C2 and a live run of Codex — all three of which
+need a real agent run rather than code.*
 
 ---
 
@@ -223,7 +229,7 @@ is amber. And the speed scale bottomed out at 60s, so Antigravity's working
 
 ## C. Platform and verification
 
-### C1 — Nothing has ever been run on Linux — **OPEN**
+### C1 — Nothing has ever been run on Linux — **FIXED**
 
 **Evidence.** Every command, test and harness in this project ran on Windows.
 
@@ -238,14 +244,40 @@ specific places would fail first:
 - `findGitBash()` and `resolveExecutable()` are Windows-shaped; they should
   no-op cleanly on Linux, which has never been observed.
 
-**Fix.** Run `pnpm install && pnpm build && pnpm test && pnpm lint` and then
-`maya init`, `maya run`, `maya web` on a Linux box. Record what breaks. Add a
-CI workflow running the suite on `ubuntu-latest` and `windows-latest` so this
-cannot silently regress. Mark the harnesses that need node-pty so they skip
-with a clear message rather than failing.
+**Fixed.** `.github/workflows/ci.yml` runs the suite on `ubuntu-latest` and
+`windows-latest`, and both legs are green: install, build, lint, 240 tests,
+MCP 17/17, agent probes 24/24, packaged bundle 12/12, panes 23/23. None of the
+three predictions above is what actually broke. What did, in the order the
+runs found it:
 
-**Effort.** Half a day, and it is the highest-value item here because it
-converts a claim into a fact.
+1. **`maya init` cannot run on a machine with no git identity.** A real bug,
+   not a test artifact: a fresh runner has no `user.name` or `user.email`, and
+   `openOrInit` makes an empty first commit because branch operations need a
+   HEAD. The suite could never have caught it — `makeTempRepo` configures an
+   identity, so the tests exercised a machine the real command never meets.
+   `openOrInit` checks first and names the two commands to run; `maya doctor`
+   has its own line for it.
+2. **`core.autocrlf=true` on GitHub's Windows runners**, which turned a
+   committed `docs\n` into `docs\r\n` and failed two content assertions. Test
+   repositories set it false.
+3. **`pathToFileURL` percent-encodes the tilde** in the 8.3 short name
+   `RUNNER~1`, and Vite's resolver does not decode it. The real CLI loads a
+   plugin from such a path — checked by hand — so this was vitest's import
+   path, never Maya's. Test temp directories go through `realpathSync.native`.
+4. **A size-and-mtime snapshot is not a file fingerprint.** The restraint
+   probe missed a same-length edit between two instant runs, because Windows
+   stamps writes from a clock that advances about every 15ms. It hashes the
+   bytes now. The harness was also asserting the probe catches a
+   byte-identical rewrite, which no before/after comparison can see.
+5. **A pty is not a terminal.** `column-width.mjs` wants a cursor-position
+   report, which comes from the screen emulator — ConPTY answers, a bare
+   Linux pty has nothing behind it. It reports SKIPPED there instead of
+   calling all fourteen samples a mismatch. node-pty **does** build on the
+   runner, so skipping on its absence was the wrong test.
+
+Two of the five were real defects and three were the checks being wrong about
+the machine. That ratio is the argument for running this in CI rather than
+once by hand.
 
 ### C2 — The `@user` marker has never been used by a live agent — **OPEN**
 
@@ -270,11 +302,23 @@ runs. The failing test's name scrolled past before it was captured.
 **Impact.** Small now, corrosive later: a suite that fails occasionally trains
 people to rerun instead of read.
 
-**Fix.** Run the suite in a loop under artificial load and capture the name
-(`vitest --reporter=json`). The likely candidates are the `eventually()` loops
-in the pane and daemon tests, which poll with fixed budgets. The fix is to
-wait on a condition with a generous ceiling rather than a short one, or to
-make the wait event-driven.
+**Fixed.** The culprit was `"still runs different workers at the same time"`,
+which proved parallelism by asserting two 120ms tasks finished inside 2000ms.
+Measured, the git work alone left about 350ms of margin, and observed totals
+were 1644ms, 1789ms and 2241ms — so the test failed whenever the machine was
+busy, which is also when it is least convincing. It compares the two runs'
+spans for overlap now: a structural claim about concurrency instead of a bet
+on a wall clock.
+
+One correction to how this was chased. A second "intermittent failure" I went
+looking for afterwards did not exist. The loop I was running piped vitest
+through `grep`, which exits 1 when nothing matches, and ANSI colour codes meant
+the pattern never matched — so the exit code was grep's, not vitest's. Four
+full captured runs came back 238/238. The lesson is narrower than "the suite is
+flaky": **check what the exit code belongs to before believing it.** The
+related 11/24 from `tools/verify/agents.mjs` was also not a flake — it was port
+contention with daemons the suite had not finished closing. That harness
+binding a fixed port 7991 is a real fragility, still unaddressed.
 
 ---
 
@@ -319,11 +363,12 @@ a few thousand events.
 
 ## E. Ergonomics
 
-**E1 — There is no verified global install.** `pnpm package` produces
-`dist/maya`, and `tools/verify/packaged.mjs` proves it runs from an unrelated
-directory with only its declared dependencies — but `npm link` / `npm i -g`
-has never been run. *Fix:* run it, from a clean shell, on both platforms, and
-write the result into the packaged README.
+**E1 — There is no verified global install.** — **FIXED.** `install.sh` and
+`install.ps1` build the bundle, put a `maya` command on `PATH` and then run
+the installed command to prove it works; `README.md` is the install guide for
+both platforms. Verified by hand on Windows. The Linux script has not been
+run on a real Linux machine — CI exercises the suite and the packaged bundle
+there, not the installer.
 
 **E2 — Copilot costs a premium request per run** and auto-approves tools it
 classifies as safe; a VS Code shim can shadow the real binary on `PATH`.
@@ -357,17 +402,21 @@ Verified by `node tools/verify/planning.mjs`, which drives
 
 ## Suggested order
 
-1. **B1** — secret text in snapshots. Smallest real fix, and A3 would spread
-   the problem if left.
-2. **C1** — Linux. Decides whether a headline claim is true.
-3. **B2.1** — wire the Claude budget options through. Nearly free.
-4. **A3** — real summaries. Small, and immediately visible in git history.
-5. **A1** — the planning Operator. The big one; everything above makes it
-   safer to add.
-6. **A2** — worker→Operator questions, once there is an Operator to ask.
-7. **B2.2** — adapter-agnostic run ceiling.
-8. **C3**, then **D1–D3** when sessions get long.
-9. **B3**, opportunistically, the next time Antigravity fails.
+This was the plan, and it was followed: B1, C1, B2.1, A3, A1, A2, B2.2, C3 and
+D1–D3 are all done, in roughly that sequence.
+
+What remains cannot be done by writing code. All three need a live agent:
+
+1. **Codex, once** — the only one of the four adapters never driven against
+   its real CLI. `codex login`, then `maya agents -d <dir> --live`.
+2. **C2** — whether a live model reaches for `@user` (and now `@operator`)
+   when a task is deliberately ambiguous. Free as part of a run that was
+   happening anyway.
+3. **B3** — Antigravity's failure shape, opportunistically, the next time it
+   fails. Keep `.maya/logs/<agent>.ndjson` when it does.
+
+Smaller and unaddressed: `tools/verify/agents.mjs` binds a fixed port 7991, so
+it reports spurious failures when run immediately after the suite.
 
 `docs/FINDINGS.md` is the companion to this file: it records the traps already
 hit, where this one records the work still outstanding.

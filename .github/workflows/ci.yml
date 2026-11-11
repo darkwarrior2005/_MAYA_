@@ -1,10 +1,11 @@
 #  Maya on both platforms.
 #
-#  Everything in Maya was built and tested on Windows. The code avoids platform
-#  assumptions, but until this workflow runs that is reasoning rather than
-#  evidence — which is why `docs/PLAN.md` lists "nothing has been run on Linux"
-#  as the open item that matters most. This is the thing that closes it, and
-#  that keeps it closed.
+#  Maya is developed on Windows. "Nothing has been run on Linux" was the open
+#  item in `docs/PLAN.md` that mattered most, and this workflow is what closed
+#  it — both legs now pass. Keeping it green is the whole point: of the five
+#  faults the first three runs found, two were real bugs and three were checks
+#  that were wrong about the machine they ran on. None had been reached by
+#  reasoning about the code first.
 #
 #  The verification harnesses in tools/verify/ that drive a real pseudoconsole
 #  need the optional node-pty, which has no Linux prebuild. They print SKIPPED
