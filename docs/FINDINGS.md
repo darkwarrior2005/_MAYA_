@@ -181,6 +181,25 @@ without the model's help: changed nothing, reported ok, last words are a
 question. That is invariant 3 one step further on, and it is in `bugfixy.md`
 as the open half of C2.
 
+**A smarter measurement of a race is still a measurement of a race.** The
+parallelism test in `operator.test.ts` took three assertions to stop being
+flaky, and the middle one is the instructive failure. First it timed two
+120ms tasks against a 2000ms ceiling, which measured git — a worktree takes
+seconds on Windows — and failed whenever the machine was busy. That was
+replaced with a comparison of the two runs' recorded spans, and called
+structural. It was not: it still needed the overlap to be large enough to
+see, and it failed on a Windows CI runner because a worker's worktree is
+created before its agent starts and *that* part is serialized. With a 120ms
+stub, the first run can finish before the second begins while both were
+dispatched concurrently, exactly as intended — a true claim, failing.
+
+What finally worked has nothing to measure: neither stub run may finish until
+both have begun, and the flag is set only when the last arrival finds someone
+still waiting. It ships with a negative control — one worker, two tasks,
+serial by invariant 14 — asserting the rendezvous reports false. An
+assertion about concurrency that has never been watched failing is not
+evidence of anything, and both earlier versions passed locally for weeks.
+
 ## Terminals
 
 **Under ConPTY — every modern Windows terminal — `process.stdout.columns` and

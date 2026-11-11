@@ -162,18 +162,71 @@ describe("Operator scheduling", () => {
     readonly capabilities = { streaming: false, structuredOutput: false, resumable: false };
     readonly timeline: Array<{ agentId: string; event: "start" | "finish"; at: number }> = [];
 
+    /**
+     * A rendezvous, for proving that two workers really do run at once.
+     *
+     * Each run waits here until `want` *different* agents have arrived, and
+     * `sawConcurrent` is set only when the last arrival finds someone still
+     * waiting — which cannot happen unless two runs were in flight together.
+     * Serialized runs each wait alone, give up, and leave the flag false.
+     *
+     * This replaces timing the runs, which is what made this test the flake
+     * C3 could not name. Measuring a 2000ms ceiling failed first; comparing
+     * the two runs' spans for overlap failed next, on a Windows CI runner,
+     * for a subtler reason: a worker's git worktree is created before its
+     * agent starts and that part is serialized, so with a 120ms stub task
+     * the first run can finish before the second begins. Both agents were
+     * dispatched concurrently — the overlap was simply too small to see.
+     * A rendezvous has nothing to measure.
+     */
+    private rendezvous?: {
+      want: number;
+      patienceMs: number;
+      arrived: Set<string>;
+      waiting: Array<() => void>;
+    };
+    sawConcurrent = false;
+
+    expectTogether(want: number, patienceMs = 5_000): void {
+      this.rendezvous = { want, patienceMs, arrived: new Set(), waiting: [] };
+    }
+
     async check(): Promise<AdapterHealth> {
       return { installed: true, authenticated: true };
     }
 
     async start(options: AgentRunOptions): Promise<AgentHandle> {
       const timeline = this.timeline;
+      const meeting = this.rendezvous;
+      const hold = async (): Promise<void> => {
+        if (!meeting) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          return;
+        }
+        meeting.arrived.add(options.agentId);
+        if (meeting.arrived.size >= meeting.want) {
+          // Someone still parked here means the runs genuinely coincided.
+          if (meeting.waiting.length > 0) this.sawConcurrent = true;
+          for (const wake of meeting.waiting.splice(0)) wake();
+          return;
+        }
+        // Generously bounded: a slow machine must still pass, and a
+        // serialized one must still finish rather than hang the suite.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, meeting.patienceMs);
+          meeting.waiting.push(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+      };
+
       return {
         agentId: options.agentId,
         onEvent: () => () => {},
         waitForCompletion: async () => {
           timeline.push({ agentId: options.agentId, event: "start", at: Date.now() });
-          await new Promise((resolve) => setTimeout(resolve, 120));
+          await hold();
           timeline.push({ agentId: options.agentId, event: "finish", at: Date.now() });
           return { ok: true, stalled: false };
         },
@@ -212,39 +265,36 @@ describe("Operator scheduling", () => {
     expect(adapter.timeline.filter((entry) => entry.event === "start")).toHaveLength(3);
   });
 
-  /** True when two different agents had a run in flight at the same moment. */
-  function ranTogether(timeline: TimedAdapter["timeline"]): boolean {
-    const spans: Array<{ agentId: string; start: number; finish: number }> = [];
-    const open = new Map<string, number>();
-    for (const entry of timeline) {
-      if (entry.event === "start") {
-        open.set(entry.agentId, entry.at);
-        continue;
-      }
-      const start = open.get(entry.agentId);
-      if (start === undefined) continue;
-      open.delete(entry.agentId);
-      spans.push({ agentId: entry.agentId, start, finish: entry.at });
-    }
-    return spans.some((a) =>
-      spans.some((b) => a.agentId !== b.agentId && a.start < b.finish && b.start < a.finish),
-    );
-  }
-
   it("still runs different workers at the same time", async () => {
     const adapter = new TimedAdapter();
+    // Neither run may finish until both have begun, so the only way through
+    // this is for the two to be in flight together.
+    adapter.expectTogether(2);
     const { operator } = await setup(adapter, [profile("worker-a"), profile("worker-b")]);
 
     await operator.run(["alpha", "beta"]);
 
     const agents = new Set(adapter.timeline.map((entry) => entry.agentId));
     expect(agents.size).toBe(2);
-    // Asserted on the recorded spans, not the clock. This used to require the
-    // whole run inside 2000ms for two 120ms tasks, which measured git — a
-    // worktree takes seconds on Windows — and left a margin of about 350ms.
-    // That is the flaky test bugfixy.md C3 could not name: it passes until the
-    // machine is busy, which is exactly when someone reruns instead of reading.
-    expect(ranTogether(adapter.timeline)).toBe(true);
+    // Nothing here is timed. See the rendezvous on TimedAdapter for the two
+    // timing-based versions of this assertion that both turned out to be
+    // flaky, and why.
+    expect(adapter.sawConcurrent).toBe(true);
+  });
+
+  it("and that is a claim the rendezvous could have refused", async () => {
+    // The negative control. Two assertions about parallelism have already
+    // been wrong here, so the replacement does not get to be believed until
+    // it has been watched failing on work that is genuinely serial. One
+    // worker with two tasks is serial by invariant 14, so nothing ever meets.
+    const adapter = new TimedAdapter();
+    adapter.expectTogether(2, 300);
+    const { operator } = await setup(adapter, [profile("worker-solo")]);
+
+    await operator.run(["alpha", "beta"]);
+
+    expect(adapter.timeline.filter((entry) => entry.event === "start")).toHaveLength(2);
+    expect(adapter.sawConcurrent).toBe(false);
   });
 
   it("reports outcomes in the order the tasks were given", async () => {

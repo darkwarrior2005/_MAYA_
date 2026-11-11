@@ -1,0 +1,3 @@
+[mcp_servers.maya]
+command = "node"
+args = ["packages/mcp-server/dist/main.js"]

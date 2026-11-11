@@ -338,13 +338,33 @@ runs. The failing test's name scrolled past before it was captured.
 **Impact.** Small now, corrosive later: a suite that fails occasionally trains
 people to rerun instead of read.
 
-**Fixed.** The culprit was `"still runs different workers at the same time"`,
-which proved parallelism by asserting two 120ms tasks finished inside 2000ms.
-Measured, the git work alone left about 350ms of margin, and observed totals
-were 1644ms, 1789ms and 2241ms — so the test failed whenever the machine was
-busy, which is also when it is least convincing. It compares the two runs'
-spans for overlap now: a structural claim about concurrency instead of a bet
-on a wall clock.
+**Fixed, on the third attempt.** The culprit was
+`"still runs different workers at the same time"`, and it took three
+assertions to stop it being flaky — worth recording, because the first two
+both looked like fixes.
+
+1. **A wall clock.** It proved parallelism by asserting two 120ms tasks
+   finished inside 2000ms. Measured, the git work alone left about 350ms of
+   margin, and observed totals were 1644ms, 1789ms and 2241ms — so it failed
+   whenever the machine was busy, which is also when it is least convincing.
+2. **Span overlap.** Replaced with a comparison of the two runs' recorded
+   spans, called structural at the time. It was not: it still depended on the
+   overlap being large enough to observe. It failed on a Windows CI runner,
+   because a worker's git worktree is created before its agent starts and
+   that part is serialized — so with a 120ms stub the first run can finish
+   before the second begins, while both were dispatched concurrently exactly
+   as intended.
+3. **A rendezvous.** Neither stub run may finish until both have begun, and
+   the flag is set only when the last arrival finds someone still waiting.
+   There is nothing left to measure. It comes with a **negative control** —
+   one worker, two tasks, serial by invariant 14 — which asserts the
+   rendezvous reports `false`, because an assertion about concurrency that
+   has never been watched failing is not evidence of anything.
+
+The original entry said "wait on a condition rather than a short budget, or
+make the wait event-driven". That was the right answer, and attempt 2 was a
+cleverer measurement rather than the event-driven wait. **A smarter
+measurement of a race is still a measurement of a race.**
 
 One correction to how this was chased. A second "intermittent failure" I went
 looking for afterwards did not exist. The loop I was running piped vitest
