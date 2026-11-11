@@ -146,6 +146,31 @@ describe("the briefing", () => {
     expect(prompt).toContain("@operator");
     expect(prompt).toContain("@user");
   });
+
+  // What follows is not style. Each line is here because a live model read an
+  // earlier draft and did the wrong thing, and softening any of them back
+  // would undo a result that cost real runs to get.
+  it("shows the marker on a line of its own, not only named in prose", () => {
+    // Claude Code only reached the person once the briefing showed the shape
+    // it wanted rather than describing it.
+    expect(withAgentChannels("x")).toMatch(/\n\s+@user \S/);
+  });
+
+  it("says that an unmarked question reaches nobody", () => {
+    // Codex asks in ordinary prose and the run is then recorded as a clean
+    // success with the question sitting in its transcript, unread. A model
+    // that believes it has asked stops working for a reason no one sees.
+    expect(withAgentChannels("x")).toMatch(/prose is delivered to nobody/);
+  });
+
+  it("chooses between the channels by who could know, not by preference", () => {
+    // The first draft ended "prefer this to `@user`", and Claude Code read
+    // that as a blanket instruction: it asked the Operator which of two price
+    // lists was live, a fact no Operator could hold.
+    const prompt = withAgentChannels("x");
+    expect(prompt).toMatch(/who could know/);
+    expect(prompt).not.toMatch(/prefer it to `@user`/);
+  });
 });
 
 describe("parseAnswer", () => {

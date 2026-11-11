@@ -5,9 +5,11 @@ import {
   EventStore,
   RepoManager,
   TaskRunner,
+  enabledWorkers,
   loadConfig,
   loadRegistry,
 } from "@maya/core";
+import type { MayaConfig, WorkerProfile } from "@maya/core";
 import type { AgentDescriptor } from "@maya/shared-types";
 import { printEvent } from "../render.js";
 
@@ -15,6 +17,26 @@ interface RunOptions {
   dir: string;
   hold?: boolean;
   timeout?: string;
+}
+
+/**
+ * Which agent `maya run` drives.
+ *
+ * The first **enabled** worker. This was `config.workers[0]`, which ignored
+ * the switch entirely: a project that had turned Claude Code off and Codex on
+ * still got Claude Code, and on a machine where only Codex is logged in that
+ * is a run which cannot work while a working worker sits in the config. It
+ * was found by trying to run a task through Codex and watching Claude Code
+ * answer. `maya start` and the pane view have always filtered on `enabled`;
+ * this was the one place that did not.
+ *
+ * Falling back to the Operator's own profile when nothing is enabled is
+ * deliberate, and is why this cannot just return `undefined`: `run` is the
+ * one command that should still do something useful on a project nobody has
+ * configured.
+ */
+export function pickWorker(config: MayaConfig): WorkerProfile {
+  return enabledWorkers(config)[0] ?? config.operator;
 }
 
 export function registerRun(program: Command): void {
@@ -36,7 +58,7 @@ export function registerRun(program: Command): void {
 
       bus.subscribe(printEvent);
 
-      const profile = config.workers[0] ?? config.operator;
+      const profile = pickWorker(config);
       const agent: AgentDescriptor = {
         id: profile.id,
         role: "worker",

@@ -37,20 +37,50 @@ export const OPERATOR_MARKER = /^\s*@operator[:\s]\s*(?=\S)/i;
 
 const CODE_FENCE = /^\s*(```|~~~)/;
 
-export const SECRET_CHANNEL_BRIEFING = [
-  "If you need something from the human directly — a decision only they can make,",
-  "or a detail without which your work would be guesswork — begin a line with",
-  "`@user` and say it plainly. That line reaches them directly rather than going",
-  "through the Operator. Use it when going through the Operator would lose or",
-  "delay what you need, not for ordinary progress reporting.",
-].join(" ");
+/*
+ * Both briefings were rewritten after watching live models read the first
+ * draft, which is the only way to tell whether prompt text works. Two agents
+ * were given a task that cannot be completed honestly — delete whichever of
+ * two files is unused, in a repository that nowhere says which — and both did
+ * the right thing and stopped. Neither reached the person:
+ *
+ *  - Claude Code used `@operator`, twice, for a fact no Operator could
+ *    possibly hold. The old Operator briefing ended "prefer this to `@user`",
+ *    and that read as a blanket instruction rather than the "for things it
+ *    can settle" it was qualified with.
+ *  - Codex used no marker at all. It asked in ordinary prose, which reaches
+ *    nobody, and the run was then recorded as a clean success with a question
+ *    sitting in its transcript.
+ *
+ * So the rewrite does three things the first draft did not: it says which
+ * channel by *who can know* rather than by preference, it shows the literal
+ * line, and it says plainly that an unmarked question is not delivered. That
+ * last one is the important one — a model that believes it has asked has
+ * stopped working for a reason nobody will ever see.
+ */
+export const SECRET_CHANNEL_BRIEFING = `${[
+  "If what you need can only come from the human — a fact that is nowhere in the",
+  "repository and that no amount of reading will settle, or a choice that is",
+  "theirs to make — begin a line with `@user` and ask it plainly:",
+].join(" ")}
+
+    @user Should the importer skip rows with no email address, or stop?
+
+${[
+  "That line reaches them. Nothing else does: a question written in ordinary",
+  "prose is delivered to nobody, and a run that ends with one is recorded as",
+  "finished rather than as waiting for an answer.",
+].join(" ")}`;
 
 export const OPERATOR_CHANNEL_BRIEFING = [
-  "If you need something from the Operator — a fact about the wider task, a",
-  "decision about scope, or what another worker has already done — begin a line",
-  "with `@operator` and ask it plainly. The Operator answers, and its answer is",
-  "given back to you. Prefer this to guessing, and prefer it to `@user`: the",
-  "Operator is there so the human is not interrupted for things it can settle.",
+  "If what you need is about the work rather than about the world — the wider",
+  "task, a decision about scope, what another worker has already done — begin a",
+  "line with `@operator` instead. It answers, and the answer comes back to you.",
+  "Which of the two to use is decided by who could know: the Operator knows this",
+  "session and this task, and cannot know what lives only in the person's head.",
+  "Ask the Operator where it could reasonably know, and the person where it could",
+  "not. Either is better than guessing, and both are far better than stopping",
+  "with the question unasked.",
 ].join(" ");
 
 export interface SplitText {

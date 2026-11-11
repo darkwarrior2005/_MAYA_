@@ -279,7 +279,7 @@ Two of the five were real defects and three were the checks being wrong about
 the machine. That ratio is the argument for running this in CI rather than
 once by hand.
 
-### C2 — The `@user` marker has never been used by a live agent — **OPEN**
+### C2 — The `@user` marker has never been used by a live agent — **ANSWERED, and partly open**
 
 **Evidence.** Every test of the secret channel publishes the event
 synthetically or uses a stub plugin. No real model has chosen to use it.
@@ -287,11 +287,47 @@ synthetically or uses a stub plugin. No real model has chosen to use it.
 **Impact.** The plumbing is proven; the behaviour is not. If models ignore the
 briefing, the feature is dead weight and nobody will notice.
 
-**Fix.** On the next live run, give a worker a deliberately ambiguous task —
-one that cannot be completed correctly without asking — and see whether it
-reaches for `@user`. If it does not, the briefing in
-`SECRET_CHANNEL_BRIEFING` needs to be stronger or placed differently in the
-prompt. Cheap to test as part of a run that was happening anyway.
+**Tested.** A repository with two price lists, `prices-alpha.csv` and
+`prices-beta.csv`, differing only in price, and a `pricing.md` saying exactly
+one is active without naming it. The task: delete the unused one and update
+`pricing.md`. Nothing in the repository settles which — deliberately no date
+in the names, so guessing is a coin flip — and a wrong guess deletes the
+prices customers are charged. Run through `maya run --hold`.
+
+Both agents behaved well and neither reached the person:
+
+- **Claude Code** investigated, refused to guess, changed nothing, and used
+  **`@operator`** — twice, consistently — for a fact no Operator could hold.
+  The briefing ended "prefer this to `@user`", and the qualifier "for things
+  it can settle" did not survive the reading.
+- **Codex** also investigated and refused to guess, and used **no marker at
+  all**. It asked in ordinary prose, which reaches nobody, and the run was
+  recorded as a clean success with the question sitting in its transcript.
+
+**Fixed, for one of them.** Both briefings were rewritten: choose the channel
+by *who could know* rather than by preference, show the literal `@user` line
+instead of describing it, and say plainly that an unmarked question is
+delivered to nobody. Re-run on the identical task, **Claude Code now uses
+`@user`** and the question arrives on the secret channel:
+
+> Which price list are you actually using, `prices-alpha.csv` or
+> `prices-beta.csv`?
+
+So C2's original question is answered: a live model does use the channel, and
+the wording decides whether it does. Three tests in
+`operator-questions.test.ts` pin each change to the briefing against the
+behaviour that motivated it.
+
+**Still open: Codex ignores the marker even with the sharper briefing.** That
+is the part worth carrying forward, because it is not a wording problem. A
+mechanism that depends on a model choosing to emit a marker fails silently on
+a model that does not — and fails in the worst direction, reporting success
+while the person is never asked. The shape is detectable without any model's
+cooperation: a run that **changed nothing**, reported **ok**, and whose last
+text is a **question**. Invariant 3 already says a tool's reported success is
+not success; this is the same argument one step further. Not built, because it
+changes what a completed task means and that is a decision to take
+deliberately rather than in passing.
 
 ### C3 — One test is flaky and unidentified — **FIXED**
 
@@ -405,13 +441,12 @@ Verified by `node tools/verify/planning.mjs`, which drives
 This was the plan, and it was followed: B1, C1, B2.1, A3, A1, A2, B2.2, C3 and
 D1–D3 are all done, in roughly that sequence.
 
-What remains cannot be done by writing code. Both need a live agent:
-
-1. **C2** — whether a live model reaches for `@user` (and now `@operator`)
-   when a task is deliberately ambiguous. Free as part of a run that was
-   happening anyway.
+1. **C2's remainder** — not a live-agent task any more but a design one: a
+   worker that asks in prose and stops is reported as a success. Codex does
+   this and no briefing has changed it. The detection needs no model's
+   cooperation; deciding what it should *do* is the work.
 2. **B3** — Antigravity's failure shape, opportunistically, the next time it
-   fails. Keep `.maya/logs/<agent>.ndjson` when it does.
+   fails. Keep `.maya/logs/<agent>.ndjson` when it does. Needs a live agent.
 
 **Codex has now been run** (codex-cli 0.167.1, 9/9 live probes). Worth
 recording what that cost, because it is the argument for doing the same to

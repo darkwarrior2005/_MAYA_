@@ -150,6 +150,37 @@ and not acted on. A note is not a safeguard — if something is going to break
 a run, it belongs in the code that sets the run up, not only in a list a
 person reads.
 
+**The wording of the channel briefing decides whether the channel is used at
+all, and for one model it decides nothing.** The `@user` marker is how a
+worker reaches the person, and whether a model reaches for it is a prompting
+question, not a plumbing one — so it was tested the only way it can be: give
+two live agents a task that cannot be done honestly (delete whichever of two
+near-identical price lists is unused, in a repository that nowhere says which)
+and watch.
+
+Both refused to guess, which is the right behaviour, and neither reached the
+person. Claude Code used **`@operator`**, twice, for a fact no Operator could
+possibly hold — the briefing ended "prefer this to `@user`" and the qualifier
+"for things it can settle" did not survive the reading. Codex used **no
+marker at all**: it asked in prose, which goes nowhere, and the run was then
+recorded as a clean success with the question sitting unread in its
+transcript.
+
+Rewriting both briefings fixed the first — choose by *who could know* rather
+than by preference, show the literal `@user` line rather than describing it,
+and say outright that an unmarked question is delivered to nobody. Claude Code
+then asked the person, on the secret channel, on the identical task. Codex
+still does not, with the same text.
+
+Two things to take from that. **Prompt text is code with a slower test
+cycle**: three sentences changed which channel a model chose, and no amount
+of reading the text would have told you. And **a mechanism that needs a model
+to opt in needs a backstop that does not.** The failure mode here is the bad
+direction — success reported, person never asked — and it is detectable
+without the model's help: changed nothing, reported ok, last words are a
+question. That is invariant 3 one step further on, and it is in `bugfixy.md`
+as the open half of C2.
+
 ## Terminals
 
 **Under ConPTY — every modern Windows terminal — `process.stdout.columns` and
