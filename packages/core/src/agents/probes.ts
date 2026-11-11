@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { simpleGit } from "simple-git";
 import type {
   AgentReport,
   AgentScorecard,
@@ -194,6 +195,18 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
   const results: ProbeResult[] = [];
   const timeoutSec = options.timeoutSec ?? DEFAULT_TIMEOUT_SEC;
   const workspace = mkdtempSync(join(tmpdir(), "maya-probe-"));
+  // A git repository, because a worker always runs inside a worktree and a
+  // probe that does not is not measuring the same thing. Codex refuses to
+  // work outside version control at all — "Not inside a trusted directory
+  // and --skip-git-repo-check was not specified" — so a bare temp directory
+  // scored it as unable to edit a file, which was a statement about the
+  // probe rather than about Codex. The identity is set locally so the probe
+  // is self-contained on a machine that has none configured globally, which
+  // is a real machine: see the git-identity finding in docs/FINDINGS.md.
+  const git = simpleGit(workspace);
+  await git.init();
+  await git.addConfig("user.name", "Maya probe", false, "local");
+  await git.addConfig("user.email", "probe@maya.invalid", false, "local");
   // Written once, at setup: doing it per run made the restraint probe see
   // its own file change and fail an agent that had behaved perfectly.
   writeFileSync(join(workspace, "README.md"), "A scratch directory for probing." + String.fromCharCode(10), "utf8");
@@ -220,7 +233,10 @@ async function liveProbes(adapter: AgentAdapter, options: ProbeOptions): Promise
         : `no file appeared${edit.error ? ` — ${edit.error}` : ""}.${
             blocked === "auth"
               ? " Log in again and re-run; this says nothing about what the tool can do."
-              : " Maya grants edits only by default; this tool may need more."
+              : blocked === "workspace"
+                ? " It declined the workspace rather than the task — nothing here is" +
+                  " about permissions, and a real run gets a git worktree."
+                : " Maya grants edits only by default; this tool may need more."
           }`,
       ms: edit.ms,
       live: true,
@@ -407,10 +423,15 @@ function tokensOf(usage: NonNullable<RunOutcome["usage"]>): number {
  * Only distinguishes the case where the answer is "this says nothing about
  * the tool": the credentials were not usable, so nothing was tested.
  */
-function classifyFailure(error: string): "auth" | "other" {
-  return /auth|credential|login|log in|unauthori[sz]|token expired|oauth/i.test(error)
-    ? "auth"
-    : "other";
+function classifyFailure(error: string): "auth" | "workspace" | "other" {
+  // Why it failed decides what to tell the person, and "it may need more
+  // permission" is the wrong answer to most of these. A tool refusing to
+  // work outside version control is the newest shape: Codex does that, and
+  // read as a permissions problem it sends the reader to change a setting
+  // that was never involved.
+  if (/trusted directory|skip-git-repo-check|not a git repos/i.test(error)) return "workspace";
+  if (/auth|credential|login|log in|unauthori[sz]|token expired|oauth/i.test(error)) return "auth";
+  return "other";
 }
 
 /** Derived from the probes, so a bar never claims more than was measured. */

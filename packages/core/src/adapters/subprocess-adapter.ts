@@ -137,16 +137,30 @@ export class SubprocessAgentHandle implements AgentHandle {
     env: Record<string, string>,
   ): Promise<AgentRunResult> {
     const { spawn } = await import("node:child_process");
-    // Node refuses to spawn a .cmd or .bat directly (CVE-2024-27980), and a
-    // path with spaces needs quoting once a shell is involved. `agy` resolves
-    // to agy.cmd on Windows, so this is the normal case, not an edge one.
-    const viaShell = needsShell(command);
-    const child = spawn(viaShell ? quoteForShell(command) : command, spec.args, {
-      cwd: options.cwd,
-      env,
-      shell: viaShell,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // Node refuses to spawn a .cmd or .bat directly (CVE-2024-27980). The
+    // obvious way round it is `shell: true`, and that is a trap: with a shell
+    // Node concatenates the arguments without escaping them (DEP0190 warns
+    // about exactly this), so the first argument containing a space arrives
+    // as several. A prompt is always such an argument. Codex rejected one
+    // with `error: unexpected argument 'with' found`, having read only the
+    // first word of the task.
+    //
+    // So cmd.exe is invoked directly instead, with the whole command line
+    // built here and passed verbatim: each token quoted, the lot wrapped in
+    // one more pair of quotes because `/s` makes cmd strip the outermost
+    // pair before parsing what is left.
+    const batch = isBatchFile(command);
+    const line = [command, ...spec.args].map(quoteForCmd).join(" ");
+    const child = spawn(
+      batch ? "cmd.exe" : command,
+      batch ? ["/d", "/s", "/c", `"${line}"`] : spec.args,
+      {
+        cwd: options.cwd,
+        env,
+        ...(batch ? { windowsVerbatimArguments: true } : {}),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
 
     this.child = {
       interrupt: () => child.kill("SIGINT"),
@@ -322,13 +336,41 @@ function looksLikeTruncatedJson(line: string): boolean {
 }
 
 /** True for a Windows batch script, which cannot be spawned directly. */
-function needsShell(command: string): boolean {
+/**
+ * Does this need cmd.exe to start it?
+ *
+ * Only a batch file does. An npm-installed CLI is the common case — `npm i -g`
+ * writes a `.cmd` shim — while a tool that ships its own binary (`agy.exe`,
+ * `claude.exe`) is spawned directly with no shell anywhere near it.
+ */
+export function isBatchFile(command: string): boolean {
   return process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
 }
 
-/** cmd.exe splits on spaces unless the program is quoted. */
-function quoteForShell(command: string): string {
-  return command.includes(" ") ? `"${command}"` : command;
+/**
+ * One token of a cmd.exe command line, quoted so the program gets it whole.
+ *
+ * Two layers of parsing sit between here and the program's `argv`: cmd.exe
+ * splits the line, then the C runtime splits what cmd hands over. The
+ * doubling of backslashes before a quote is the second layer's rule — `\"`
+ * means a literal quote, so a trailing backslash would otherwise escape the
+ * closing one and swallow the rest of the line.
+ *
+ * What this does not do is hide `%` from cmd.exe. `%PATH%` in a prompt is
+ * still expanded when the tool is a batch shim, because the escape for that
+ * only works inside a batch file, not on a command line. A prompt is the one
+ * argument likely to contain arbitrary text, so it is worth knowing; it
+ * mangles a prompt rather than running anything, since expansion happens
+ * inside a quoted argument.
+ */
+export function quoteForCmd(token: string): string {
+  if (token === "") return '""';
+  const escaped = token
+    // A quote, and any backslashes immediately before it.
+    .replace(/(\\*)"/g, '$1$1\\"')
+    // Backslashes at the very end, which meet the closing quote.
+    .replace(/(\\+)$/, "$1$1");
+  return `"${escaped}"`;
 }
 
 type NodePtyModule = typeof import("node-pty");

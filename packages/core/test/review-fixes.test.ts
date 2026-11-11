@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import { afterEach, describe, expect, it } from "vitest";
 import { describeBadPermission } from "../src/adapters/copilot-cli.js";
+import { preferSpawnable } from "../src/adapters/which.js";
 import { EventBus } from "../src/bus/event-bus.js";
 import { EventStore } from "../src/bus/event-store.js";
 import { MayaPaths } from "../src/config/maya-config.js";
@@ -210,6 +211,49 @@ describe("a temp directory is never left behind by these tests", () => {
     const dir = mkdtempSync(join(tmpdir(), "maya-tidy-"));
     safeRemove(dir);
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+describe("picking the entry point Windows can actually start", () => {
+  // Found by driving a freshly installed `codex` for the first time: the run
+  // died with "spawn C:\\...\\npm\\codex ENOENT" for a file that was plainly
+  // there. `npm i -g` installs three entry points — an extensionless shell
+  // script, a .cmd and a .ps1 — `where` prints the extensionless one first,
+  // and CreateProcess cannot run it.
+  const npmShims = [
+    "C:\\Users\\me\\AppData\\Roaming\\npm\\codex",
+    "C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd",
+    "C:\\Users\\me\\AppData\\Roaming\\npm\\codex.ps1",
+  ];
+
+  it("takes the .cmd over the shim `where` listed first", () => {
+    expect(preferSpawnable(npmShims)).toBe(
+      "C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd",
+    );
+  });
+
+  it("never picks the PowerShell script, which cmd.exe cannot run either", () => {
+    expect(preferSpawnable(npmShims)).not.toMatch(/\.ps1$/i);
+    expect(preferSpawnable(["C:\\tools\\thing.ps1", "C:\\tools\\thing.bat"])).toBe(
+      "C:\\tools\\thing.bat",
+    );
+  });
+
+  it("prefers a real binary, which needs no shell at all", () => {
+    expect(
+      preferSpawnable(["C:\\tools\\agy.cmd", "C:\\tools\\agy.exe", "C:\\tools\\agy"]),
+    ).toBe("C:\\tools\\agy.exe");
+  });
+
+  it("still returns something when nothing is directly runnable", () => {
+    // "Not on PATH" would send the reader to reinstall what is already
+    // installed. A spawn that fails naming the path it tried says more.
+    expect(preferSpawnable(["C:\\tools\\odd"])).toBe("C:\\tools\\odd");
+    expect(preferSpawnable([])).toBeNull();
+  });
+
+  it("is case-insensitive, because PATH entries are not normalised", () => {
+    expect(preferSpawnable(["C:\\tools\\Thing.CMD"])).toBe("C:\\tools\\Thing.CMD");
   });
 });
 

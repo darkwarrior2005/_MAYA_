@@ -405,15 +405,24 @@ Verified by `node tools/verify/planning.mjs`, which drives
 This was the plan, and it was followed: B1, C1, B2.1, A3, A1, A2, B2.2, C3 and
 D1–D3 are all done, in roughly that sequence.
 
-What remains cannot be done by writing code. All three need a live agent:
+What remains cannot be done by writing code. Both need a live agent:
 
-1. **Codex, once** — the only one of the four adapters never driven against
-   its real CLI. `codex login`, then `maya agents -d <dir> --live`.
-2. **C2** — whether a live model reaches for `@user` (and now `@operator`)
+1. **C2** — whether a live model reaches for `@user` (and now `@operator`)
    when a task is deliberately ambiguous. Free as part of a run that was
    happening anyway.
-3. **B3** — Antigravity's failure shape, opportunistically, the next time it
+2. **B3** — Antigravity's failure shape, opportunistically, the next time it
    fails. Keep `.maya/logs/<agent>.ndjson` when it does.
+
+**Codex has now been run** (codex-cli 0.167.1, 9/9 live probes). Worth
+recording what that cost, because it is the argument for doing the same to
+B3: the parser written from documentation was correct in every field but one,
+and the run still found four bugs — three of them in shared code that had
+nothing to do with Codex. `where` listing an npm shim Windows cannot spawn
+ahead of the `.cmd`; `shell: true` concatenating arguments unescaped, so every
+multi-word prompt to any `.cmd`-resolved tool was corrupted; and a live-probe
+workspace that was not a git repository, which made Codex's refusal to work
+outside version control look like a permissions failure. See
+`docs/FINDINGS.md`.
 
 Smaller and unaddressed: `tools/verify/agents.mjs` binds a fixed port 7991, so
 it reports spurious failures when run immediately after the suite.

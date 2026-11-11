@@ -47,12 +47,21 @@ export interface CodexAdapterOptions {
  * transport, because a PTY corrupts long JSON lines and the corruption looks
  * like success.
  *
- * The event names and payloads here come from OpenAI's own non-interactive
- * documentation, which publishes a worked sample of the stream. They have not
- * been checked against a running binary on this machine — `codex` was not
- * installed when this was written — so the parser treats every field as
- * optional and infers nothing it was not given. `docs/FINDINGS.md` has what
- * assuming a shape cost with Antigravity.
+ * The event names and payloads here came from OpenAI's non-interactive
+ * documentation, and have since been **checked against a real run** of
+ * codex-cli 0.167.1: `thread.started`/`turn.started`/`item.completed`/
+ * `turn.completed` arrive exactly as documented, carrying `thread_id` and the
+ * usage field names below. The one difference was an extra
+ * `cache_write_input_tokens`, now read — see `readUsage`. Every field is
+ * still treated as optional, because one version agreeing is not a contract.
+ *
+ * Driving it for the first time found two things no amount of reading would
+ * have: `codex exec` reads stdin to EOF before it starts, so an inherited
+ * pipe nobody writes to hangs it indefinitely (Maya is safe — the pipe
+ * transport passes `stdio: ["ignore", ...]`, which is an EOF immediately; a
+ * PTY would not be, which is one more reason this adapter never asks for
+ * one), and `where codex` lists an extensionless shim that Windows cannot
+ * spawn ahead of the `.cmd` it can. Both are in `docs/FINDINGS.md`.
  */
 export class CodexCliAdapter implements AgentAdapter {
   readonly id = "codex-cli" as const;
@@ -336,32 +345,43 @@ function describeFailure(raw: unknown): string | undefined {
 }
 
 /**
- * Codex's usage block, as its own sample reports it:
+ * Codex's usage block. Captured from a real `codex exec --json` run
+ * (codex-cli 0.167.1):
  *
- *   {"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122,
+ *   {"input_tokens":21468,"cached_input_tokens":13696,
+ *    "cache_write_input_tokens":0,"output_tokens":5,
  *    "reasoning_output_tokens":0}
  *
- * `cached_input_tokens` reads as a subset of `input_tokens` there — 24448 of
- * 24763 — so the cached part is subtracted out rather than added on top.
+ * `cached_input_tokens` reads as a subset of `input_tokens` — 13696 of
+ * 21468 — so the cached part is subtracted out rather than added on top.
  * Maya sums `inputTokens + cacheReadTokens` when it totals a run, and
  * reporting both whole would bill a cached prompt twice. The same reasoning
  * applies to `reasoning_output_tokens`, which is left inside `output_tokens`.
+ *
+ * `cache_write_input_tokens` was not in the published sample and turned up in
+ * the real stream. It is read as a *subset* of the input too, on the same
+ * reading as the cached count: writing an entry to the cache is something
+ * done to tokens that were sent, not extra tokens. It is reported separately
+ * so the Info Panel can show it, and it is not subtracted twice.
  */
 function readUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const usage = raw as Record<string, unknown>;
   const input = numberOf(usage["input_tokens"]);
   const cached = numberOf(usage["cached_input_tokens"]);
+  const written = numberOf(usage["cache_write_input_tokens"]);
   const output = numberOf(usage["output_tokens"]);
-  if (!input && !output && !cached) return undefined;
+  if (!input && !output && !cached && !written) return undefined;
 
   // Clamped, because a cached count larger than the input count would make
   // the fresh input negative and the totals nonsense.
-  const fresh = Math.max(0, input - Math.min(cached, input));
+  const read = Math.min(cached, input);
+  const fresh = Math.max(0, input - read);
   return {
     inputTokens: fresh,
     outputTokens: output,
-    ...(cached > 0 ? { cacheReadTokens: Math.min(cached, input) } : {}),
+    ...(read > 0 ? { cacheReadTokens: read } : {}),
+    ...(written > 0 ? { cacheWriteTokens: Math.min(written, fresh) } : {}),
   };
 }
 

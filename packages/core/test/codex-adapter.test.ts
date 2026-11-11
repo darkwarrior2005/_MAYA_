@@ -168,6 +168,60 @@ describe("Codex stream parsing", () => {
     expect(total).toBe(24763);
   });
 
+  it("reads the cache-write count the real stream carries", () => {
+    // Captured from codex-cli 0.167.1, which reports a field the published
+    // sample did not: cache_write_input_tokens. Read as a subset of the input
+    // on the same reasoning as the cached count — writing a cache entry is
+    // something done to tokens that were sent, not extra tokens — so the
+    // reported figures must still sum to input_tokens.
+    const parse = makeCodexParser();
+    const events = parse(
+      line({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 21468,
+          cached_input_tokens: 13696,
+          cache_write_input_tokens: 4096,
+          output_tokens: 5,
+          reasoning_output_tokens: 0,
+        },
+      }),
+      "w",
+    );
+    const usage = events.find((event) => event.type === "usage");
+    expect(usage).toMatchObject({
+      usage: {
+        inputTokens: 21468 - 13696,
+        cacheReadTokens: 13696,
+        cacheWriteTokens: 4096,
+        outputTokens: 5,
+      },
+    });
+  });
+
+  it("leaves the cache-write count out when it is zero, as it usually is", () => {
+    // The real run reported 0 here, and an explicit zero in the Info Panel
+    // reads as a measurement rather than an absence.
+    const parse = makeCodexParser();
+    const events = parse(
+      line({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 21468,
+          cached_input_tokens: 13696,
+          cache_write_input_tokens: 0,
+          output_tokens: 5,
+        },
+      }),
+      "w",
+    );
+    const usage = events.find((event) => event.type === "usage");
+    expect(usage).toMatchObject({ usage: { inputTokens: 7772, outputTokens: 5 } });
+    expect(usage && "usage" in usage ? usage.usage : {}).not.toHaveProperty(
+      "cacheWriteTokens",
+    );
+  });
+
   it("treats a failed turn as fatal and not done cleanly", () => {
     const parse = makeCodexParser();
     const events = parse(

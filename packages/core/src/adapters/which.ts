@@ -39,10 +39,37 @@ export async function resolveExecutable(command: string): Promise<string | null>
         .map((line) => line.trim())
         .filter(Boolean);
       if (lines.length === 0) return resolve(null);
-      const exe = lines.find((line) => line.toLowerCase().endsWith(".exe"));
-      resolve(exe ?? lines[0] ?? null);
+      resolve(preferSpawnable(lines));
     });
   });
+}
+
+/**
+ * Which of `where`'s matches Windows can actually start.
+ *
+ * `npm i -g` installs three entry points for one command: an extensionless
+ * shell script for Git Bash and friends, a `.cmd`, and a `.ps1`. `where`
+ * prints the exact-name match first, which is the extensionless one — and
+ * `CreateProcess` cannot run it, so the spawn fails with ENOENT naming a file
+ * that plainly exists. That is what happened the first time Maya drove a
+ * freshly installed `codex`: "spawn ...\\npm\\codex ENOENT".
+ *
+ * So the extension decides, not the order `where` happened to print. `.exe`
+ * first because a real binary needs no shell; then the ones cmd.exe can run,
+ * which `needsShell` in subprocess-adapter.ts knows to wrap. `.ps1` is never
+ * chosen: cmd.exe cannot run it either.
+ *
+ * If nothing matches, the first line is still returned rather than null. The
+ * command *is* installed, and saying "not on PATH" would send the reader off
+ * to reinstall something that is already there; a failed spawn naming the
+ * path it tried is the more honest outcome.
+ */
+export function preferSpawnable(paths: string[]): string | null {
+  for (const extension of [".exe", ".com", ".cmd", ".bat"]) {
+    const match = paths.find((path) => path.toLowerCase().endsWith(extension));
+    if (match) return match;
+  }
+  return paths[0] ?? null;
 }
 
 /** The first entry on PATH that exists and is executable. */

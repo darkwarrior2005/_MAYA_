@@ -175,12 +175,17 @@ turned up are worth keeping in mind:
 Keeping it green is the point of the workflow. `docs/FINDINGS.md` records what
 the first three runs cost to learn.
 
+**All four agents have now been driven against their real CLIs.** Codex was
+the last, and it passes 9/9 live probes. Its parser — the part written from
+documentation rather than observation — turned out to be exactly right; what
+broke was the plumbing around it, four faults in Maya of which three were not
+Codex-specific at all: an npm shim `where` lists ahead of the `.cmd`,
+`shell: true` concatenating arguments unescaped so any multi-word prompt was
+corrupted, and a probe workspace that was not a git repository. All four are
+in `docs/FINDINGS.md`.
+
 ## Still open
 
-- **No live run of Codex.** The adapter and its JSONL parser were built from
-  OpenAI's published interface, not from a session — the one adapter of the
-  four never driven against its real CLI. `npm i -g @openai/codex`,
-  `codex login`, then `maya agents -d <dir> --live` settles it.
 - **The `@user` marker is untested with a live agent.** The plumbing is
   tested, but whether a model reaches for it when it should is a prompting
   question. Watch it on the next live run.

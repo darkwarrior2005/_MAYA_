@@ -116,7 +116,14 @@ project removes its Maya state with it.
 ## First run
 
 Each wrapped CLI signs in once, per machine, with its own tool. Maya never
-handles those credentials:
+handles those credentials. Codex is the one that installs from npm, if you
+want it:
+
+```bash
+npm install -g @openai/codex
+```
+
+Then the logins:
 
 ```bash
 claude login       # Claude Code

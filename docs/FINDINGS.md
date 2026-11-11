@@ -82,13 +82,73 @@ prompt is arbitrary text: one starting with a dash parses as a flag, and a
 prompt of exactly `-` means "read the prompt from stdin", which hangs on a
 stdin nobody will write to.
 
-**Codex's event stream is parsed from OpenAI's published sample, not from a
-run.** No `codex` was installed on the machine the adapter was written on. The
-docs do publish a worked JSONL sample and name the event types, which is more
-than Antigravity ever offered — but it is still a documented shape rather than
-an observed one, so every field is read as optional and nothing is inferred
-that was not given. Treat it the way `bugfixy.md` B3 treats Antigravity until
-someone has run it.
+**Codex's event stream matched its documentation, and driving it still found
+four things reading could not.** The adapter was written against OpenAI's
+published JSONL sample with no `codex` installed. Checked later against
+codex-cli 0.167.1, the documented shape held exactly:
+`thread.started`/`turn.started`/`item.completed`/`turn.completed`, carrying
+`thread_id` and the usage field names. `resume <id>` worked and the session
+genuinely remembered its own previous answer. The only difference was an
+extra `cache_write_input_tokens`, now read.
+
+That is the good news, and it is the least interesting part. The first real
+run found four faults in **Maya**, three of which had nothing to do with
+Codex:
+
+**`codex exec` reads stdin to EOF before it starts.** It prints "Reading
+additional input from stdin..." and waits, because its documented behaviour is
+to append piped stdin to the prompt. Given an inherited pipe that nobody
+writes to and nobody closes, it waits forever — a seven-minute hang on a
+one-word prompt, which a stall watchdog would eventually kill and report as a
+stalled agent. Maya is safe by accident of a good default: the pipe transport
+passes `stdio: ["ignore", …]`, which is an immediate EOF. A PTY would not be,
+which is one more reason this adapter never asks for one.
+
+**`where` lists an entry point Windows cannot run, first.** `npm i -g` installs
+three: an extensionless shell script for Git Bash, a `.cmd`, and a `.ps1`.
+`where` prints the exact-name match first, `CreateProcess` cannot execute it,
+and the spawn fails with `ENOENT` naming a file that plainly exists. The
+resolver preferred `.exe` and then fell through to the first line — which is
+the shim it meant to avoid. It now picks by extension: `.exe`, then what
+cmd.exe can run. Nothing had caught this because no adapter had ever resolved
+to an npm shim: `agy` is `agy.exe` under AppData, `claude` is `claude.exe` and
+runs in-process anyway. A comment in `subprocess-adapter.ts` asserting that
+"`agy` resolves to agy.cmd on Windows, so this is the normal case" was simply
+wrong, and had been wrong unchallenged.
+
+**`shell: true` concatenates arguments without escaping them.** This is the
+sharp one. Node refuses to spawn a `.cmd` directly (CVE-2024-27980) and the
+obvious workaround is `shell: true` — but then arguments are joined, not
+passed, so the first one containing a space arrives as several. Codex received
+the first word of the task and rejected the second: `error: unexpected
+argument 'with' found`. Node's own DEP0190 warns about this. cmd.exe is now
+invoked directly with the command line built here, each token quoted and the
+whole wrapped in one more pair because `/s` strips the outermost. One residual
+caveat, documented at `quoteForCmd`: `%VAR%` in a prompt is still expanded by
+cmd.exe when the tool is a batch shim, because the escape for that works only
+inside a batch file.
+
+**Codex refuses to work outside version control**, with "Not inside a trusted
+directory and --skip-git-repo-check was not specified". The live probe
+workspace was a bare temp directory, so Codex scored as *unable to edit a
+file* — a verdict about the probe, not the tool, and the same dishonesty as
+scoring an expired login as a permissions problem. The probe workspace is a
+git repository now, which is what a worker actually gets, and
+`classifyFailure` names this shape so the advice stops pointing at
+permissions. Passing `--skip-git-repo-check` would have been the wrong fix:
+the guard is sensible and real runs always have a worktree.
+
+With all four fixed, Codex passes 9/9 live probes: wrote the file in 19.8s,
+reported 46243 tokens, left the tree alone when told to. **The lesson is the
+ratio.** The parser, the part that was guessed, was right. Everything that
+broke was in the plumbing nobody thought was in question.
+
+One more thing worth sitting with: `traits.ts` already listed "refuses to run
+outside a git repository" as a known trait of Codex, in the same codebase as
+a live probe that ran it in a bare temp directory. The fact was written down
+and not acted on. A note is not a safeguard — if something is going to break
+a run, it belongs in the code that sets the run up, not only in a list a
+person reads.
 
 ## Terminals
 

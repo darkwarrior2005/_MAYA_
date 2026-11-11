@@ -61,7 +61,8 @@ const STATIC_CONS: Record<string, string[]> = {
     "Defaults to a read-only sandbox, so a worker that is not given `workspace-write` cannot change anything",
     "Permission is one sandbox setting, not per-tool: you cannot allow edits while forbidding shell",
     "Refuses to run outside a git repository unless told to, which is fine for Maya and surprising elsewhere",
-    "Maya parses its stream from OpenAI's published sample, not from a run on this machine — no `codex` was installed to check against",
+    "Installs as an npm shim, so the binary Maya runs is a .cmd and goes through cmd.exe — see the quoting note in subprocess-adapter.ts",
+    "Reports tokens but not a cost, on a ChatGPT login — there is no per-run price to show",
   ],
 };
 
