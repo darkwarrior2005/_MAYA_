@@ -24,8 +24,52 @@ installed, a shim can shadow the real `copilot` binary on PATH.
 **Antigravity streams deltas.** `--output-format stream-json --mode accept-edits`.
 `text_delta` fragments must be joined per `step_index` and emitted only when the
 step reaches `state: "DONE"`; a successful step carries no status field at all.
-The failure shape is unconfirmed — no failing sample was available — so success
-is inferred from reaching `DONE` without an error.
+
+**Antigravity's failure shapes, confirmed at last** (agy 1.5.6). They were
+inferred from documentation for months, which is why `bugfixy.md` B3 said to
+check them the next time it failed. Made to fail on purpose instead — a read
+of a file that is not there, a shell command headless mode cannot approve, and
+an invalid `--model` — these are what came back:
+
+- **A failed tool step is `state: "ERROR"`**, a state value nothing in the
+  parser had anticipated, and its error lives at `tool_info.error` as an
+  **object**: `{ type: "TOOL_ERROR", message: "file does not exist" }`. Not a
+  string, and not on the step itself, which is where the code looked first.
+  It came out right by luck, because an object is truthy; passed through to a
+  pane it rendered as `[object Object]`.
+- **A failed tool does not fail the run.** `result.status` stayed `SUCCESS`
+  while the agent read the error, explained it and stopped. That is correct of
+  Antigravity and the parser was right to leave it alone: invariant 3 says a
+  reported success is not success, which is not licence to invent a failure
+  the tool never claimed.
+- **A denied permission also leaves `status: "SUCCESS"`**, with an empty
+  `response`. Asked to run a shell command under Maya's default
+  `--mode accept-edits`, headless `agy` auto-denied it and called the run a
+  success. The only structured trace is **`result.denied_actions`**:
+  `[{ action: "command", display_name: "RunCommand" }]`, which Maya ignored
+  entirely, leaving one line on stderr as the sole evidence — so the reader
+  concludes the agent declined the work when in fact Maya never allowed it.
+  Now reported as a non-fatal error naming what to allow.
+- **`result.error` is where a real failure explains itself**, next to
+  `finished_reason`. Maya was discarding it and printing `run finished with
+  status ERROR`. The text it threw away: `invalid model selection (--model
+  "not-a-real-model"): model not recognized ... Available models: ...` — the
+  difference between a reader who knows what to fix and one who does not.
+
+**Antigravity's `cache_read_tokens` is NOT inside `input_tokens`, and this is
+the trap.** Its `total_tokens` is `input + output` every time and never counts
+the cache, which reads exactly like OpenAI's convention — where the cached
+part *is* inside the input, and `codex-cli.ts` correctly subtracts it out. I
+copied that reasoning here and was wrong. The third captured run refutes it:
+**19,712 cached against 2,296 input.** A subset cannot exceed its set, so
+Antigravity's `input_tokens` is already the fresh part and cached reads are
+counted separately — the Anthropic convention. Two vendors, the same field
+name, opposite meanings. Do not carry this fix between adapters, and do not
+"correct" an adapter so its figures match a tool's own total without checking
+which definition that total uses: Maya's `totalTokens()` counts cache reads
+deliberately, so it reads higher than `agy`'s and that is a difference of
+definition, not a bug. Two samples agreed with the wrong answer; the third
+settled it.
 
 **Claude Code needs git-bash on Windows.** The SDK fails with a bare "exited
 with code 1" unless `CLAUDE_CODE_GIT_BASH_PATH` is set; the real explanation is

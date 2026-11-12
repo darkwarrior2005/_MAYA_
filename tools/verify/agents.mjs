@@ -122,6 +122,19 @@ export function createExpiredAgent() {
 }
 `;
 
+/** A port nothing is listening on, from the OS rather than from hope. */
+async function freePort() {
+  const { createServer } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
 function run(args) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [MAYA, ...args], { stdio: "pipe" });
@@ -272,13 +285,18 @@ check(
 );
 
 // --- served over HTTP --------------------------------------------------------
-const web = spawn(process.execPath, [MAYA, "web", "-d", project, "--no-open", "--port", "7991"], {
+// A port the OS says is free, rather than a hardcoded 7991. That fixed port
+// made this harness report 11/24 whenever it ran straight after the test
+// suite, because a daemon from the suite had not finished letting go of it —
+// a failure that looks exactly like a real one and is not.
+const port = await freePort();
+const web = spawn(process.execPath, [MAYA, "web", "-d", project, "--no-open", "--port", String(port)], {
   stdio: "pipe",
 });
 await new Promise((r) => setTimeout(r, 3000));
 let served = null;
 try {
-  served = await (await fetch("http://127.0.0.1:7991/api/agents")).json();
+  served = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
 } catch (error) {
   served = { error: String(error) };
 }

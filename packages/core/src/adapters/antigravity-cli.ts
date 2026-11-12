@@ -117,10 +117,14 @@ export function makeAntigravityParser(): (line: string, agentId: string) => Agen
         if (state === "ACTIVE") {
           return [{ type: "tool_call", agentId, toolName, input: info["parameters"] }];
         }
-        // A successful step carries no status field at all, so success is
-        // inferred from reaching DONE without an error rather than assumed —
-        // no failing sample was available to confirm the error shape.
-        const error = step["error"] ?? info["error"];
+        // Confirmed against two real failures (agy 1.5.6): a failed tool step
+        // arrives as `state: "ERROR"` — a state value nothing here had
+        // anticipated — carrying `tool_info.error` as an **object**,
+        // `{ type: "TOOL_ERROR", message: "file does not exist" }`. Not a
+        // string, and not on the step itself, which is where this used to
+        // look first. Success still carries no status of its own, so DONE
+        // without an error remains the test for it; that part was right.
+        const error = describeToolError(step["error"] ?? info["error"]);
         const ok = state === "DONE" && !error;
         return [
           {
@@ -145,11 +149,45 @@ export function makeAntigravityParser(): (line: string, agentId: string) => Agen
 
       const events: AgentEvent[] = [];
       if (usage) events.push({ type: "usage", agentId, usage });
-      if (status !== "SUCCESS") {
+
+      // Permissions it was refused, which `agy` reports and this used to
+      // ignore. It matters because a denied run still comes back
+      // `status: "SUCCESS"` with an empty response: asked to run a shell
+      // command under Maya's default `--mode accept-edits`, the real
+      // thing auto-denied it and called the run a success. Without this the
+      // only trace was a stderr line in the raw log, and the person is left
+      // thinking the agent chose not to do the work when in fact Maya never
+      // let it. Not fatal: one denied action does not prove the task failed,
+      // and `worker_stopped_short` already covers a run that achieved
+      // nothing.
+      const denied = deniedActions(result["denied_actions"]);
+      if (denied.length > 0) {
         events.push({
           type: "error",
           agentId,
-          message: `run finished with status ${status || "unknown"}`,
+          message:
+            `Antigravity was denied ${denied.join(", ")} — headless mode cannot prompt, so it ` +
+            "was auto-denied. Allow it under permissions.allow in that tool's settings.json, " +
+            "or give this worker a mode that grants it.",
+          fatal: false,
+        });
+      }
+
+      if (status !== "SUCCESS") {
+        // `result.error` is where the useful text lives, and it was being
+        // thrown away in favour of "run finished with status ERROR". A real
+        // one reads: `invalid model selection (--model "not-a-real-model"):
+        // model not recognized ... Available models: ...` — the difference
+        // between a reader who knows what to fix and one who does not.
+        const detail = typeof result["error"] === "string" ? result["error"].trim() : "";
+        const reason =
+          typeof result["finished_reason"] === "string" ? result["finished_reason"] : "";
+        events.push({
+          type: "error",
+          agentId,
+          message:
+            detail ||
+            `run finished with status ${status || "unknown"}${reason ? ` (${reason})` : ""}`,
           fatal: true,
         });
       }
@@ -167,6 +205,32 @@ export function makeAntigravityParser(): (line: string, agentId: string) => Agen
   };
 }
 
+/**
+ * Antigravity's usage block, from three real runs (agy 1.5.6):
+ *
+ *   input=24050 output=231  cache_read=19721 total=24281
+ *   input=13574 output=74   cache_read=8192  total=13648
+ *   input=2296  output=70   cache_read=19712 total=2366
+ *
+ * Read the first two alone and it looks as though `cache_read_tokens` sits
+ * inside `input_tokens`, because `total_tokens` is `input + output` every
+ * time and never includes the cache. That is what `codex-cli.ts` found for
+ * OpenAI, and subtracting the cached part out there is right.
+ *
+ * **It is wrong here, and the third run is why: 19712 cached against 2296
+ * input.** A subset cannot exceed its set. So Antigravity's `input_tokens`
+ * is *already* the fresh part, cached reads are counted separately and
+ * excluded from its own total, and both figures are reported whole — the
+ * Anthropic convention, not OpenAI's. Two vendors, opposite meanings for the
+ * same field name: do not carry this fix from one adapter to another, and do
+ * not make an adapter's figures match a tool's own total without checking
+ * which definition that total uses. Maya's `totalTokens()` counts cache reads
+ * deliberately, so it will read higher than `agy`'s `total_tokens`, and that
+ * is a difference of definition rather than a bug to fix.
+ *
+ * `thinking_tokens` stays inside `output_tokens`: 24050 + 231 is the total
+ * with 98 thinking tokens reported, so adding them would double-count.
+ */
 function readUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const usage = raw as Record<string, unknown>;
@@ -179,4 +243,38 @@ function readUsage(raw: unknown): TokenUsage | undefined {
     outputTokens: output,
     ...(typeof cacheRead === "number" ? { cacheReadTokens: cacheRead } : {}),
   };
+}
+
+/**
+ * A tool step's error as a line of text.
+ *
+ * It arrives as `{ type: "TOOL_ERROR", message: "file does not exist" }`.
+ * Passed through whole it reaches a screen as `[object Object]`, which is
+ * worse than nothing — invariant 11 has agent text stripped before drawing,
+ * and this is the step before that: making it text at all.
+ */
+function describeToolError(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === "string") return raw.trim() || undefined;
+  if (typeof raw === "object") {
+    const error = raw as Record<string, unknown>;
+    const message = typeof error["message"] === "string" ? error["message"].trim() : "";
+    const kind = typeof error["type"] === "string" ? error["type"] : "";
+    if (message) return kind && kind !== "TOOL_ERROR" ? `${kind}: ${message}` : message;
+  }
+  return JSON.stringify(raw);
+}
+
+/** The permissions `agy` says it was refused, named for a person to act on. */
+function deniedActions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const denied = entry as Record<string, unknown>;
+      const display = typeof denied["display_name"] === "string" ? denied["display_name"] : "";
+      const action = typeof denied["action"] === "string" ? denied["action"] : "";
+      return display && action ? `${display} (${action})` : display || action;
+    })
+    .filter((name): name is string => name.length > 0);
 }

@@ -53,9 +53,10 @@ const STATIC_CONS: Record<string, string[]> = {
     "A VS Code install can put a shim on PATH that hides the real binary",
   ],
   "antigravity-cli": [
-    "Its failure shape has never been observed, so success is inferred rather than read",
+    "A denied permission still reports the run as a success with an empty answer — Maya reads `denied_actions` to catch it",
+    "Headless mode cannot answer its own permission prompts, so anything needing `command` is auto-denied",
     "Sends text in fragments, which Maya has to reassemble per step",
-    "Not on PATH as an executable Node can spawn directly — it resolves to a .cmd",
+    "Slowest of the four on a one-line task, by a wide margin",
   ],
   "codex-cli": [
     "Defaults to a read-only sandbox, so a worker that is not given `workspace-write` cannot change anything",

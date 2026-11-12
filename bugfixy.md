@@ -7,13 +7,14 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status: 240 tests, lint clean, every verification harness passing, and CI green
+Status: 274 tests, lint clean, every verification harness passing, and CI green
 on `ubuntu-latest` and `windows-latest`.
 
-**Update.** A1, A2, A3, B1, B2, B4, C1 and D1–D3 are now fixed; an MCP server,
-two agent skills and a fourth agent (OpenAI Codex) have been added. What is
-left is marked **OPEN** below — B3, C2, and a live run of Codex. The fixed
-entries are kept for the reasoning, with what was done.
+**Update.** Everything on this list is now fixed — A1–A3, B1–B4, C1–C3, D1–D3
+and E1–E2 — and an MCP server, two agent skills and a fourth agent (OpenAI
+Codex) have been added. All four agents have been driven against their real
+CLIs. The entries are kept for the reasoning, each with what was actually
+done, which in several cases was not what the entry predicted.
 
 Building A1 turned up two more defects, both now fixed and both invisible to
 the unit tests because they only appear in a real repository:
@@ -171,7 +172,7 @@ more now that the rest works.
 **Effort.** 1 is trivial, 2 is small and worth doing because it is adapter
 agnostic.
 
-### B3 — Antigravity's failure shape is guessed — **OPEN**
+### B3 — Antigravity's failure shape is guessed — **FIXED**
 
 **Evidence.** The comment in `antigravity-cli.ts` says so: success is inferred
 from reaching `state: "DONE"` without an error field, because no failing
@@ -182,12 +183,41 @@ the invariant that a tool's reported success is not success — could merge a
 branch where nothing happened. The fatal-error guard in
 `subprocess-adapter.ts` only helps if the parser recognises the failure.
 
-**Fix.** Force a failure deliberately: run Antigravity against a read-only
-directory, or deny a tool, and capture `.maya/logs/<agent>.ndjson`. Then
-encode the real shape and add a parser test from the captured sample. Until
-then, treat an Antigravity worker as the least trustworthy of the three.
+**Fixed.** Three failures forced on purpose against agy 1.5.6 — a read of a
+file that is not there, a shell command headless mode cannot approve, and an
+invalid `--model` — and nine parser tests built from the captured streams
+verbatim. What the samples said:
 
-**Effort.** An hour, mostly waiting on the CLI.
+- A failed tool step is `state: "ERROR"`, a state value the parser had never
+  heard of, with its error at `tool_info.error` as an **object**
+  `{ type, message }` — not a string, and not on the step where the code
+  looked first. The outcome was right by luck (an object is truthy) and the
+  message reached a pane as `[object Object]`.
+- A failed tool does **not** fail the run: `status` stayed `SUCCESS` while the
+  agent explained the error and stopped. The parser was right to leave that
+  alone.
+- **A denied permission also leaves `status: "SUCCESS"`, with an empty
+  response.** This is the one that mattered. Under Maya's default
+  `--mode accept-edits` a shell command is auto-denied, and the only
+  structured trace is `result.denied_actions`, which Maya ignored — so a run
+  Maya itself had hobbled looked like an agent that chose to do nothing. Now
+  a non-fatal error naming what to allow.
+- `result.error` and `finished_reason` carry the reason a run failed, and were
+  being discarded in favour of `run finished with status ERROR`.
+
+**And a mistake worth keeping.** Two of the three samples made
+`cache_read_tokens` look like a subset of `input_tokens` — `total_tokens` is
+`input + output` and excludes the cache, exactly as OpenAI reports it, where
+subtracting is correct and `codex-cli.ts` does. I made that change. The third
+sample refuted it: **19,712 cached against 2,296 input**, and a subset cannot
+exceed its set. Reverted. Antigravity follows the Anthropic convention, where
+`input_tokens` is already the fresh part. The same field name means opposite
+things in two adapters, and two agreeing samples were not enough to tell.
+
+Also fixed along the way: `tools/verify/agents.mjs` bound a hardcoded port
+7991 and reported 11/24 whenever it ran straight after the test suite, a
+failure indistinguishable from a real one. It asks the OS for a free port now,
+and passes 24/24 run immediately after `pnpm test`.
 
 ### B4 — The probes credited a run that never happened — **FIXED**
 
@@ -474,28 +504,31 @@ run hung forever on a piped stdin waiting for an answer that could never come.
 Verified by `node tools/verify/planning.mjs`, which drives
 `maya start --plan` in a real pseudoconsole and answers it three ways.
 
-## Suggested order
+## What this list cost, in the end
 
-This was the plan, and it was followed: B1, C1, B2.1, A3, A1, A2, B2.2, C3 and
-D1–D3 are all done, in roughly that sequence.
+Nothing is outstanding. The order it was done in — B1, C1, B2.1, A3, A1, A2,
+B2.2, C3, D1–D3, C2, B3 — was roughly the order suggested, which is less
+interesting than how often the entry was wrong about what it would find.
 
-1. **B3** — Antigravity's failure shape, opportunistically, the next time it
-   fails. Keep `.maya/logs/<agent>.ndjson` when it does. Needs a live agent,
-   and is the last thing on this list.
+**Three items were written as "confirm the shape" and all three found bugs
+elsewhere.** Driving Codex for the first time (B3's argument, applied to
+C2's neighbour) proved the parser written from documentation right in every
+field but one — and turned up four defects, three of them in shared code with
+nothing to do with Codex: `where` listing an npm shim Windows cannot spawn
+ahead of the `.cmd`, `shell: true` concatenating arguments unescaped so every
+multi-word prompt to any `.cmd` tool was corrupted, and a live-probe workspace
+that was not a git repository. B3 itself found that a run Maya had hobbled by
+denying a permission reported `SUCCESS` with an empty response, and that the
+one field explaining a failure was being thrown away. C2 found that the
+briefing's wording decided whether a model used the channel at all.
 
-**Codex has now been run** (codex-cli 0.167.1, 9/9 live probes). Worth
-recording what that cost, because it is the argument for doing the same to
-B3: the parser written from documentation was correct in every field but one,
-and the run still found four bugs — three of them in shared code that had
-nothing to do with Codex. `where` listing an npm shim Windows cannot spawn
-ahead of the `.cmd`; `shell: true` concatenating arguments unescaped, so every
-multi-word prompt to any `.cmd`-resolved tool was corrupted; and a live-probe
-workspace that was not a git repository, which made Codex's refusal to work
-outside version control look like a permissions failure. See
-`docs/FINDINGS.md`.
+**Twice, the fix I shipped first was wrong**, and in both cases it was passing
+tests when it was wrong: the parallelism assertion (C3, three attempts) and
+the Antigravity cache-token subtraction, which two samples supported and the
+third refuted. Both are written up where they happened.
 
-Smaller and unaddressed: `tools/verify/agents.mjs` binds a fixed port 7991, so
-it reports spurious failures when run immediately after the suite.
+If anything is worth carrying into the next list, it is that an entry saying
+"verify X" should budget for finding something other than X.
 
-`docs/FINDINGS.md` is the companion to this file: it records the traps already
-hit, where this one records the work still outstanding.
+`docs/FINDINGS.md` is the companion to this file: it records the traps hit
+along the way, at the point where each one matters.

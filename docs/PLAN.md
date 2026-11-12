@@ -186,9 +186,13 @@ in `docs/FINDINGS.md`.
 
 ## Still open
 
-- **Antigravity's tool-failure shape** is still inferred; no failing sample
-  has turned up. It is the last open item, and it needs a live run that goes
-  wrong rather than any code.
+Nothing. The last item was Antigravity's tool-failure shape, inferred from
+documentation because no failing sample had turned up; three were then forced
+on purpose and the real shapes are in `docs/FINDINGS.md`, with nine parser
+tests built from the captured streams. All four agents have now been driven
+against their real CLIs, and both platforms are green in CI.
+
+What is left is in "Deferred, deliberately" below — choices, not gaps.
 
 ## Deferred, deliberately
 
@@ -199,5 +203,10 @@ in `docs/FINDINGS.md`.
 - **Typing into a worker pane.** There is no process behind a worker pane to
   receive keystrokes (ADR 0001). A future adapter with a genuine interactive
   session could be given a pane that hosts it.
-- **Antigravity's tool-failure shape.** Inferred from reaching `DONE` without an
-  error, because no failing sample was available. Confirm it when one appears.
+- **Antigravity's `ask_permission` tools.** Its tool list includes
+  `ask_permission`, `ask_custom_permission` and `ask_question`, which headless
+  mode cannot answer — so a run needing one is auto-denied and
+  `result.denied_actions` says which. Maya reports that rather than wiring the
+  prompts up: answering them would mean brokering another CLI's permission
+  dialogue through the bus, which is the Operator's job to avoid, not to take
+  on.
