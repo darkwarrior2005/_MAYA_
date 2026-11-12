@@ -186,16 +186,9 @@ in `docs/FINDINGS.md`.
 
 ## Still open
 
-- **A worker that asks in prose and stops is reported as a success.** The
-  `@user` marker itself is settled — a live model does use it, once the
-  briefing chooses the channel by who could know and shows the literal line
-  (see `docs/FINDINGS.md`). But Codex ignores the marker whatever the
-  briefing says, and a mechanism that needs a model to opt in needs a
-  backstop that does not: changed nothing, reported ok, last words a
-  question. Detectable without the model's help; what it should *do* is a
-  deliberate decision, so it is unbuilt. `bugfixy.md` C2 has the detail.
 - **Antigravity's tool-failure shape** is still inferred; no failing sample
-  has turned up.
+  has turned up. It is the last open item, and it needs a live run that goes
+  wrong rather than any code.
 
 ## Deferred, deliberately
 

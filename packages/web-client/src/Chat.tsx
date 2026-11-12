@@ -123,6 +123,8 @@ function describe(event: BusEvent): string | null {
       return payload.answered
         ? `Operator: ${payload.answer}`
         : `no answer: ${payload.answer}`;
+    case "worker_stopped_short":
+      return `${payload.agentId} finished without changing anything, and asked nobody: ${payload.lastWords}`;
     // Usage drives the info panel rather than the transcript.
     case "usage":
       return null;

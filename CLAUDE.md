@@ -99,7 +99,13 @@ because they were broken once already.
    merged, and a blocked merge becomes a question for the user — never a forced
    merge and never a task marked done on a dirty tree.
 3. **A tool's reported success is not success.** A recorded fatal error
-   overrides it, and so does a stall. See `subprocess-adapter.ts`.
+   overrides it, and so does a stall. See `subprocess-adapter.ts`. A run that
+   reports success, commits nothing and says nothing to anybody is not a
+   success either: it is a worker that stopped, usually having asked
+   something in prose where no channel was listening, and it is reported
+   (`worker_stopped_short`) rather than passed over. Never make that
+   detection depend on the agent having used a marker or phrased a question —
+   one real refusal contained no question mark at all.
 4. **Pipe transport stays the default** for subprocess adapters. A PTY corrupts
    the long JSON lines these tools emit, and the corruption looks like success.
 5. **No bypass-permission flags by default**, for any tool.

@@ -38,6 +38,12 @@ export interface TaskRunOutcome {
   stalled: boolean;
   ok: boolean;
   error?: string;
+  /**
+   * Set when the run reported success, committed nothing and said nothing to
+   * anybody — the worker's closing words, so a caller can show why rather
+   * than printing a bare "finished ok" over an empty commit.
+   */
+  stoppedShort?: string;
 }
 
 /**
@@ -103,12 +109,14 @@ export class TaskRunner {
     );
 
     const asked: Array<{ questionId: string; question: string }> = [];
+    let reachedUser = false;
     handle.onEvent((event) => {
       // The transcript comes back from the publisher, which has already taken
       // the user's private lines out of it.
       const recorded = publishAgentEvent(this.bus, input.agent.id, event);
       if (recorded.transcript) transcript.push(recorded.transcript);
       asked.push(...recorded.questions);
+      if (recorded.reachedUser) reachedUser = true;
     });
 
     const result = await handle.waitForCompletion();
@@ -138,6 +146,26 @@ export class TaskRunner {
       `${summary}\n\nTask ${taskId} by ${input.agent.displayName}`,
     );
 
+    // Reported success, changed nothing, told nobody. The Operator already
+    // holds such a branch and marks the task blocked, so the state machine
+    // was never wrong — what was missing is anyone being told *why*, and the
+    // reason is usually a question the worker asked in prose where nothing is
+    // listening. This goes on the secret channel because that panel exists to
+    // put things the person must see in front of them, and being asked
+    // nothing is exactly how this failure feels from the other side.
+    const stoppedShort =
+      result.ok && !committed && asked.length === 0 && !reachedUser
+        ? lastWords(transcript)
+        : null;
+    if (stoppedShort) {
+      this.bus.publish("secret", input.agent.id, "worker_stopped_short", {
+        type: "worker_stopped_short",
+        taskId,
+        agentId: input.agent.id,
+        lastWords: stoppedShort,
+      });
+    }
+
     // A stalled or failed agent never gets its work merged.
     if (!result.ok || input.holdForReview) {
       await this.branches.checkout(base);
@@ -157,6 +185,7 @@ export class TaskRunner {
         stalled: result.stalled,
         ok: result.ok,
         ...(result.error ? { error: result.error } : {}),
+        ...(stoppedShort ? { stoppedShort } : {}),
       };
     }
 
@@ -185,6 +214,7 @@ export class TaskRunner {
       stalled: false,
       ok: merge.merged,
       ...(merge.message && !merge.merged ? { error: merge.message } : {}),
+      ...(stoppedShort ? { stoppedShort } : {}),
     };
   }
 }
@@ -209,6 +239,32 @@ ${OPERATOR_CHANNEL_BRIEFING}`;
 
 /** Kept under the old name: adapter plugins and tests import it. */
 export const withSecretChannel = withAgentChannels;
+
+/** How much of a worker's closing text to quote back to the person. */
+const LAST_WORDS_LIMIT = 600;
+
+/**
+ * The worker's closing text, for quoting when it stopped without doing the
+ * work.
+ *
+ * The last text event rather than the whole transcript: by then the agent is
+ * explaining itself, which is the part worth reading. The full thing stays in
+ * the main transcript and the context snapshot, so this is a pointer, not a
+ * record — hence the cap, and hence keeping the *start* of it: an agent that
+ * is asking tends to lead with the question (Codex did) while an agent that
+ * is explaining leads with the reason, and both are near the front.
+ */
+export function lastWords(transcript: string[]): string | null {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const entry = transcript[index]?.trim();
+    // Tool lines are the publisher's own annotations, not the agent talking.
+    if (!entry || entry.startsWith("[tool] ")) continue;
+    return entry.length > LAST_WORDS_LIMIT
+      ? `${entry.slice(0, LAST_WORDS_LIMIT).trimEnd()}…`
+      : entry;
+  }
+  return null;
+}
 
 export const NO_OPERATOR =
   "No Operator is running this task (`maya run` drives one agent on its own), so this question went unanswered. Use `maya start` for a session with an Operator.";

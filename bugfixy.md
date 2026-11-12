@@ -318,16 +318,34 @@ the wording decides whether it does. Three tests in
 `operator-questions.test.ts` pin each change to the briefing against the
 behaviour that motivated it.
 
-**Still open: Codex ignores the marker even with the sharper briefing.** That
-is the part worth carrying forward, because it is not a wording problem. A
-mechanism that depends on a model choosing to emit a marker fails silently on
-a model that does not — and fails in the worst direction, reporting success
-while the person is never asked. The shape is detectable without any model's
-cooperation: a run that **changed nothing**, reported **ok**, and whose last
-text is a **question**. Invariant 3 already says a tool's reported success is
-not success; this is the same argument one step further. Not built, because it
-changes what a completed task means and that is a decision to take
-deliberately rather than in passing.
+**Codex ignores the marker even with the sharper briefing**, which is why
+there is now a backstop that needs no model's cooperation.
+
+The first design was to look for a question: changed nothing, reported ok,
+last text ends in a question mark. Checking that against the two transcripts
+actually captured killed it — **Claude Code's refusal contains no question
+mark at all.** It narrated being stuck ("so I've stopped here instead of
+guessing") and asked nothing. A detector hunting for questions would have
+missed the very case that motivated it.
+
+So the signal is the part that is true regardless of what the model chose to
+emit: **reported ok, committed nothing, and said nothing to anybody** —
+neither `@user` nor `@operator`. Such a worker neither did the work, nor
+failed, nor asked. `TaskRunner` publishes `worker_stopped_short` on the
+secret channel with the worker's closing words, carried on the outcome as
+`stoppedShort`, and shown by `maya run`, the pane view and the web client.
+
+Two things this turned up. The state machine was **already right**: the
+Operator marks a task with no commit `blocked`, never merged, so nothing had
+to change there — what was missing was anyone being told *why*. And the
+payload type says this is Maya's inference, not the worker reaching out, so
+no view presents it as the agent having used the channel.
+
+Verified on the real thing: Codex, given the same ambiguous task, asked in
+prose and `maya run` printed its question back with "It finished without
+changing anything, and asked nobody." Ten tests cover it, including every
+case where it must stay quiet — the worker used `@user`, used `@operator`,
+actually committed something, or failed outright.
 
 ### C3 — One test is flaky and unidentified — **FIXED**
 
@@ -461,12 +479,9 @@ Verified by `node tools/verify/planning.mjs`, which drives
 This was the plan, and it was followed: B1, C1, B2.1, A3, A1, A2, B2.2, C3 and
 D1–D3 are all done, in roughly that sequence.
 
-1. **C2's remainder** — not a live-agent task any more but a design one: a
-   worker that asks in prose and stops is reported as a success. Codex does
-   this and no briefing has changed it. The detection needs no model's
-   cooperation; deciding what it should *do* is the work.
-2. **B3** — Antigravity's failure shape, opportunistically, the next time it
-   fails. Keep `.maya/logs/<agent>.ndjson` when it does. Needs a live agent.
+1. **B3** — Antigravity's failure shape, opportunistically, the next time it
+   fails. Keep `.maya/logs/<agent>.ndjson` when it does. Needs a live agent,
+   and is the last thing on this list.
 
 **Codex has now been run** (codex-cli 0.167.1, 9/9 live probes). Worth
 recording what that cost, because it is the argument for doing the same to

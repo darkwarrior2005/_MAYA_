@@ -175,11 +175,24 @@ still does not, with the same text.
 Two things to take from that. **Prompt text is code with a slower test
 cycle**: three sentences changed which channel a model chose, and no amount
 of reading the text would have told you. And **a mechanism that needs a model
-to opt in needs a backstop that does not.** The failure mode here is the bad
-direction — success reported, person never asked — and it is detectable
-without the model's help: changed nothing, reported ok, last words are a
-question. That is invariant 3 one step further on, and it is in `bugfixy.md`
-as the open half of C2.
+to opt in needs a backstop that does not.**
+
+That backstop exists now, and designing it taught the sharper lesson. The
+obvious signal was a question: changed nothing, reported ok, last text ends
+in a question mark. Checked against the two transcripts actually captured, it
+fails immediately — **Claude Code's refusal contains no question mark at
+all.** It narrated being stuck and asked nothing. The detector would have
+missed the case that motivated it, and would have looked fine in any test
+written from imagination rather than from a recording.
+
+What is true regardless of what the model emits is: **reported ok, committed
+nothing, told nobody.** That worker neither did the work, nor failed, nor
+asked. `worker_stopped_short` says so on the secret channel with the
+worker's closing words, and `maya run` prints them. Note what did *not* need
+changing: the Operator already marks a task with no commit `blocked` rather
+than merged, so the state machine was right all along — the hole was that
+nobody was told why. **Check what is already correct before building on top
+of it**; the fix was a quarter the size it first looked.
 
 **A smarter measurement of a race is still a measurement of a race.** The
 parallelism test in `operator.test.ts` took three assertions to stop being

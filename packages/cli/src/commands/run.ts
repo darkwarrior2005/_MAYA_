@@ -99,6 +99,17 @@ export function registerRun(program: Command): void {
       if (outcome.stalled) console.log(`stalled   yes`);
       if (outcome.conflicts.length) console.log(`conflicts ${outcome.conflicts.join(", ")}`);
       if (outcome.error) console.log(`error     ${outcome.error}`);
+      // A run that reported success and changed nothing. Printing "merged
+      // false" and stopping there leaves the reader to guess; the worker
+      // nearly always said why, so say it here.
+      if (outcome.stoppedShort) {
+        console.log("");
+        console.log("It finished without changing anything, and asked nobody. It said:");
+        console.log("");
+        for (const line of outcome.stoppedShort.split("\n")) console.log(`  ${line}`);
+        console.log("");
+        console.log("If that is a question, answer it and run the task again.");
+      }
 
       store.close();
       process.exitCode = outcome.ok ? 0 : 1;

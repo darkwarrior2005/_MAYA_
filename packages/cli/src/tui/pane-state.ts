@@ -44,6 +44,10 @@ const OPERATOR_EVENT_TYPES = new Set([
   // than split between the worker's pane and the Operator's.
   "agent_question",
   "operator_answer",
+  // Maya's report that a worker stopped without doing the work. It names a
+  // worker but is not that worker talking, and it is the thing the person has
+  // to act on, so it belongs where they are already reading.
+  "worker_stopped_short",
 ]);
 
 /**
@@ -284,6 +288,8 @@ export function formatEvent(event: BusEvent): string | null {
       return `?? ${payload.agentId} asks: ${payload.question}`;
     case "operator_answer":
       return payload.answered ? `-> ${payload.answer}` : `-> no answer: ${payload.answer}`;
+    case "worker_stopped_short":
+      return `!! ${payload.agentId} changed nothing and asked nobody: ${payload.lastWords}`;
     default:
       return `${who}: ${event.type}`;
   }

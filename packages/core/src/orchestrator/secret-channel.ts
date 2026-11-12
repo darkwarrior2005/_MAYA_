@@ -145,6 +145,16 @@ export interface PublishedAgentEvent {
    * ids are what tie an answer back to its question in the log.
    */
   questions: Array<{ questionId: string; question: string }>;
+  /**
+   * Whether this event carried an `@user` line to the person.
+   *
+   * The caller needs it to know whether a worker reached anybody at all: a
+   * run that reported success, changed nothing and said nothing to either the
+   * Operator or the person has stopped for a reason nobody can see, and
+   * `worker_stopped_short` exists to say so. Without this the backstop would
+   * fire on a worker that *did* use the channel properly.
+   */
+  reachedUser: boolean;
 }
 
 export function publishAgentEvent(
@@ -157,6 +167,7 @@ export function publishAgentEvent(
     return {
       transcript: event.type === "tool_call" ? `[tool] ${event.toolName}` : null,
       questions: [],
+      reachedUser: false,
     };
   }
 
@@ -186,5 +197,5 @@ export function publishAgentEvent(
   // A message that was entirely for the user leaves nothing for the main
   // transcript, and publishing an empty line there would be noise.
   if (main) bus.publish("main", agentId, "text", { ...event, text: main });
-  return { transcript: main || null, questions: asked };
+  return { transcript: main || null, questions: asked, reachedUser: secret.length > 0 };
 }

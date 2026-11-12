@@ -121,7 +121,12 @@ export function SecretChannel({ events }: { events: BusEvent[] }): ReactElement 
           <span className="said">
             {event.payload.type === "agent_message" || event.payload.type === "user_message"
               ? event.payload.text
-              : event.type}
+              : // Maya's own observation, not the worker reaching out, so it
+                // is worded as a report about the worker rather than as
+                // something the worker said.
+                event.payload.type === "worker_stopped_short"
+                ? `stopped without changing anything, and asked nobody: ${event.payload.lastWords}`
+                : event.type}
           </span>
           <time dateTime={event.createdAt}>{event.createdAt.slice(11, 16)}</time>
         </li>

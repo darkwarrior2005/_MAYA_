@@ -87,7 +87,8 @@ export type ChatEventType =
   | "conflict_resolved"
   | "merge_result"
   | "agent_question"
-  | "operator_answer";
+  | "operator_answer"
+  | "worker_stopped_short";
 
 export type ChatPayload =
   | { type: "user_message"; text: string; replyToEventId?: EventId }
@@ -112,6 +113,30 @@ export type ChatPayload =
       answer: string;
       /** False when no Operator adapter was available to answer. */
       answered: boolean;
+    }
+  /**
+   * Maya's own observation, not the worker's words: this run reported success,
+   * changed nothing, and said nothing to anybody through a channel.
+   *
+   * It exists because `@user` and `@operator` need the model to choose to use
+   * them, and one does not. Given a task it could not do honestly, Codex
+   * asked in ordinary prose and the run was recorded as a clean success with
+   * the question sitting unread in its transcript — the person never asked,
+   * and nothing on screen saying so. Claude Code, before its briefing was
+   * rewritten, did the same thing without even a question mark: it narrated
+   * being stuck. So the signal here deliberately looks for neither a marker
+   * nor a question. "Reported ok, committed nothing, told nobody" is true
+   * regardless of what the model chose to emit, which is the point.
+   *
+   * `lastWords` is the worker's closing text, quoted so the person can see
+   * why it stopped. The type is what says this is an inference by Maya, so no
+   * view should present it as the worker having reached out.
+   */
+  | {
+      type: "worker_stopped_short";
+      taskId: TaskId;
+      agentId: AgentId;
+      lastWords: string;
     };
 
 export interface ConflictOption {
