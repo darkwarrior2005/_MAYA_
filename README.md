@@ -1,6 +1,6 @@
 # Maya
 
-[![ci](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml/badge.svg)](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml)
+[![ci](https://github.com/darkwarrior2005/Maya/actions/workflows/ci.yml/badge.svg)](https://github.com/darkwarrior2005/Maya/actions/workflows/ci.yml)
 
 **Version 1.1.0.** `CHANGELOG.md` says what changed.
 
@@ -118,11 +118,11 @@ Maya works on a project, not on loose files. It can create one for you —
 ### Linux and macOS
 
 ```bash
-git clone https://github.com/darkwarrior2005/_MAYA_.git
+git clone https://github.com/darkwarrior2005/Maya.git
 ```
 
 ```bash
-cd _MAYA_ && ./install.sh
+cd Maya && ./install.sh
 ```
 
 This puts `maya` and `maya-mcp` in `~/.local/bin` and adds that folder to your
@@ -145,11 +145,11 @@ Choices you can make:
 ### Windows
 
 ```powershell
-git clone https://github.com/darkwarrior2005/_MAYA_.git
+git clone https://github.com/darkwarrior2005/Maya.git
 ```
 
 ```powershell
-cd _MAYA_; .\install.ps1
+cd Maya; .\install.ps1
 ```
 
 This puts `maya.cmd` and `maya-mcp.cmd` in
@@ -571,7 +571,7 @@ what Maya understood from it.
 Delete the installed links and the clone:
 
 ```bash
-rm ~/.local/bin/maya ~/.local/bin/maya-mcp && rm -rf /path/to/_MAYA_
+rm ~/.local/bin/maya ~/.local/bin/maya-mcp && rm -rf /path/to/Maya
 ```
 
 ```powershell
