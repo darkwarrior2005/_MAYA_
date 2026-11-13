@@ -133,4 +133,13 @@ jobs:
       - name: And can prepare a project
         run: |
           ~/.local/bin/maya init /tmp/ci-project
-          ~/.local/bin/maya doctor -d /tmp/ci-project
+          # doctor exits non-zero when an enabled worker's CLI is missing, and
+          # this container deliberately has none of them — so a clean bill of
+          # health here would mean doctor was not looking. What is checked is
+          # that it runs and reports, which is why the checks are grepped
+          # rather than the exit code trusted.
+          ~/.local/bin/maya doctor -d /tmp/ci-project > /tmp/doctor.log 2>&1 || true
+          cat /tmp/doctor.log
+          grep -q "git knows who you are" /tmp/doctor.log
+          grep -q "event store is in WAL mode" /tmp/doctor.log
+          grep -q "Claude Code" /tmp/doctor.log
