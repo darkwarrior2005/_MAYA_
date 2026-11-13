@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 13 Nov 2026
+
+One fix, to the last real limitation left after build 1.
 
 - **An Antigravity worker can be allowed to run commands.** Headless `agy`
   cannot show a permission prompt, so anything needing one was auto-denied —

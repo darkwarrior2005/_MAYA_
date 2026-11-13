@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name("maya")
   .description("Multi-agent AI coding orchestration — one Operator, many wrapped coding CLIs")
-  .version("1.0.0");
+  .version("1.1.0");
 
 registerInit(program);
 registerRun(program);
