@@ -12,12 +12,21 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-This is **build 1 (1.0.0)**. All six phases of `docs/PLAN.md` are built, every
-item on `bugfixy.md` is closed, and CI runs on three machines: `ubuntu-latest`,
-`windows-latest`, and a container with nothing in it but Node and git — the
-last one because node-pty being a compile-time dependency made the build
-impossible on a machine without a compiler, and the other two could not see it.
-What remains is under "Deferred, deliberately" in the plan: choices, not gaps.
+This is **1.1.0** (build 1 was 1.0.0). All six phases of `docs/PLAN.md` are
+built, every item on `bugfixy.md` is closed, and CI runs on three machines:
+`ubuntu-latest`, `windows-latest`, and a container with nothing in it but Node
+and git — the last one because node-pty being a compile-time dependency made
+the build impossible on a machine without a compiler, and the other two could
+not see it. What remains is under "Deferred, deliberately" in the plan:
+choices, not gaps.
+
+**A worker's `allowedTools` is per-tool, and a wrong pattern grants nothing.**
+Each adapter validates its own grammar and refuses before spawning rather than
+dropping what it does not understand: Antigravity takes
+`command(npm test)`-style rules (passed as session-only `--settings`), Copilot
+takes `write(src/**)` and `shell(git:*)`, Codex takes a sandbox policy and no
+list at all. The two validators are tested against each other's grammar
+because a profile copied between tools would otherwise grant nothing silently.
 
 `README.md` is the user guide and is the thing to keep accurate when behaviour
 changes; `CHANGELOG.md` records what each build is.

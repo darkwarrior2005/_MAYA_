@@ -5,7 +5,7 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-13: **Build 1 (1.0.0).** Phases 0–6 are complete, every
+Status as of 2026-11-13: **1.1.0** (build 1 was 1.0.0). Phases 0–6 are complete, every
 item on `bugfixy.md` is closed, and CI is green on three machines — Ubuntu,
 Windows, and a container with nothing in it but Node and git. All four
 assistants have been driven against their real CLIs. What is left is in

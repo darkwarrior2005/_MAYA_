@@ -7,7 +7,7 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status at build 1 (1.0.0): 287 tests, lint clean, every verification harness
+Status at 1.1.0: 295 tests, lint clean, every verification harness
 passing, and CI green on three machines — `ubuntu-latest`, `windows-latest`,
 and a container holding nothing but Node and git.
 

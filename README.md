@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml/badge.svg)](https://github.com/darkwarrior2005/_MAYA_/actions/workflows/ci.yml)
 
-**Build 1.**
+**Version 1.1.0.** `CHANGELOG.md` says what changed.
 
 Maya runs several AI coding assistants on one project at the same time, under
 one agent in charge. You give it a job in plain words. It splits the job up,
@@ -48,6 +48,7 @@ under your own limits, with your own credentials that Maya never sees.
 12. [When something goes wrong](#when-something-goes-wrong)
 13. [Uninstalling](#uninstalling)
 14. [For developers](#for-developers)
+15. [Where this has been run](#where-this-has-been-run)
 
 ---
 
@@ -400,6 +401,11 @@ re-reads it on the next run.
 - **`model`** names a specific model for that worker, if you want one.
 - **`stallTimeoutSec`** is how long a worker may go silent before Maya decides
   it is stuck, kills it, and says so. The default is 60 seconds.
+- **`allowedTools`** and **`deniedTools`** grant that worker more than the
+  default, such as permission to run a particular command. The patterns differ
+  per assistant — see [letting a worker run commands](#letting-a-worker-run-commands).
+- **`maxTurns`**, **`maxBudgetUsd`** and **`maxTokens`** cap a single run,
+  where the assistant supports it.
 
 More workers means more things happening at once — and more money spent at
 once. Two or three is usually plenty.
@@ -460,8 +466,8 @@ because a pattern the tool does not understand grants **nothing**:
 | --- | --- | --- |
 | **Antigravity** | `command(npm test)`, `command(*)`, `mcp(server/tool)`, `read_file(src/**)` | The target is a command line, not a tool name. `command(run_command)` grants nothing. |
 | **Copilot** | `write`, `write(src/**)`, `shell(git:*)`, `mcp(server)` | A different grammar entirely. |
-| **Codex** | — | Takes a sandbox setting instead of a list. Use `"sandbox": "workspace-write"`. |
-| **Claude Code** | — | Uses its own permission mode. |
+| **Codex** | — | Takes a sandbox policy rather than a list, and refuses a list outright instead of ignoring it. The policy is `workspace-write` and is not settable per worker in this version. |
+| **Claude Code** | — | Uses its own permission mode, `acceptEdits`. Not settable per worker in this version. |
 
 Maya checks these before it starts a run and refuses a pattern it knows the
 tool will not understand, naming the likely mistake, rather than letting you
@@ -591,7 +597,7 @@ pnpm install && pnpm build
 ```
 
 ```bash
-pnpm test          # 287 tests
+pnpm test          # 295 tests
 ```
 
 ```bash
