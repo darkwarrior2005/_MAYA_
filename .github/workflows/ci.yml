@@ -87,3 +87,50 @@ jobs:
 
       - name: Verify the column widths
         run: node tools/verify/column-width.mjs
+
+  # A Linux box with nothing on it: Node and git, no compiler, no pnpm. That
+  # is what the README asks for, and the job above cannot stand in for it —
+  # GitHub's runners carry build tools, so node-pty compiles there and its
+  # absence never gets tested. The first time this was tried by hand, in a
+  # container, `pnpm build` failed outright: node-pty was called an optional
+  # dependency but `typeof import("node-pty")` made it a compile-time one, so
+  # the build and therefore install.sh could not run on such a machine at all.
+  # This job is here so that cannot come back unnoticed.
+  installer:
+    name: linux with no compiler
+    runs-on: ubuntu-latest
+    container: node:25-bookworm-slim
+
+    steps:
+      # Before checkout, which otherwise falls back to a tarball download and
+      # leaves no repository for install.sh to build from.
+      - name: Add git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Give git an identity
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.name "maya ci"
+          git config --global user.email "ci@maya.invalid"
+
+      # Node 25 ships no corepack, so this is the step a person has to take
+      # too. Root inside the container, so no prefix is needed here.
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      # The whole installer, as the README tells someone to run it: no chmod
+      # first, because the file is committed executable.
+      - name: Run install.sh
+        run: ./install.sh --no-path
+
+      - name: The installed command runs
+        run: ~/.local/bin/maya --version
+
+      - name: And can prepare a project
+        run: |
+          ~/.local/bin/maya init /tmp/ci-project
+          ~/.local/bin/maya doctor -d /tmp/ci-project

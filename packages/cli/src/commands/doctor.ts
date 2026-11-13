@@ -27,6 +27,18 @@ export function registerDoctor(program: Command): void {
         console.log(`FAIL  ${message}`);
       };
 
+      // Checked before git, because every git question asked about a
+      // directory that is not there comes back as "Cannot use simple-git on a
+      // directory that does not exist", which `assertGitAvailable` then
+      // reports as "git is not usable — install git and make sure it is on
+      // PATH". Git was fine; the folder was missing. Saying which is the
+      // difference between a one-second fix and a hunt through an install.
+      if (!existsSync(repoRoot)) {
+        fail(`${repoRoot} does not exist. Create it, or run: maya init ${options.dir}`);
+        process.exitCode = 1;
+        return;
+      }
+
       try {
         await RepoManager.assertGitAvailable(repoRoot);
         console.log("ok    git is available");
