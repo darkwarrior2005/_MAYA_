@@ -10,11 +10,18 @@ fixed (`ca26809`, `4383efb`) and are not repeated here.
 Status: 274 tests, lint clean, every verification harness passing, and CI green
 on `ubuntu-latest` and `windows-latest`.
 
-**Update.** Everything on this list is now fixed — A1–A3, B1–B4, C1–C3, D1–D3
-and E1–E2 — and an MCP server, two agent skills and a fourth agent (OpenAI
-Codex) have been added. All four agents have been driven against their real
-CLIs. The entries are kept for the reasoning, each with what was actually
-done, which in several cases was not what the entry predicted.
+**Update.** A1–A3, B1–B4, C1–C3, D1–D3 and E1 are fixed, and an MCP server,
+two agent skills and a fourth agent (OpenAI Codex) have been added. All four
+agents have been driven against their real CLIs. The entries are kept for the
+reasoning, each with what was actually done, which in several cases was not
+what the entry predicted.
+
+**E2 is the exception, and this header claimed otherwise for a day.** Its
+documentation half is done — `maya agents` names the binary it resolved and
+warns when that is a VS Code shim — but the `maya doctor` line it asks for was
+never written, and on this machine `copilot` still resolves to the shim. It is
+the two-line change the entry describes, and it is the only thing on this list
+that is not done.
 
 Building A1 turned up two more defects, both now fixed and both invisible to
 the unit tests because they only appear in a real repository:
