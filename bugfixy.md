@@ -7,14 +7,18 @@ Every issue below was **verified against running code**, not inferred. Where a
 number appears, it was measured. Three bugs found in the review are already
 fixed (`ca26809`, `4383efb`) and are not repeated here.
 
-Status: 274 tests, lint clean, every verification harness passing, and CI green
-on `ubuntu-latest` and `windows-latest`.
+Status at build 1 (1.0.0): 287 tests, lint clean, every verification harness
+passing, and CI green on three machines — `ubuntu-latest`, `windows-latest`,
+and a container holding nothing but Node and git.
 
 **Update.** A1–A3, B1–B4, C1–C3, D1–D3 and E1 are fixed, and an MCP server,
 two agent skills and a fourth agent (OpenAI Codex) have been added. All four
 agents have been driven against their real CLIs. The entries are kept for the
 reasoning, each with what was actually done, which in several cases was not
 what the entry predicted.
+
+**Everything on this list is now closed.** E2 was the last, and it was done
+after this header had claimed it for a day.
 
 **E2 is now done too**, after this header claimed it for a day while it was
 not. `maya doctor` names the binary each tool will actually run, and says so

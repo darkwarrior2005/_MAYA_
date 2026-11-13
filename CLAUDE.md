@@ -12,10 +12,15 @@ cost hours and every one of which looks like a different problem when you hit
 it. `docs/adr/` holds decisions that went against the original plan, with the
 reasoning.
 
-All six phases of `docs/PLAN.md` are built, and CI runs the suite on
-`ubuntu-latest` and `windows-latest` — both green, so Linux is verified rather
-than argued. What is left is listed under "Still open" there: it needs a live
-agent run, not code.
+This is **build 1 (1.0.0)**. All six phases of `docs/PLAN.md` are built, every
+item on `bugfixy.md` is closed, and CI runs on three machines: `ubuntu-latest`,
+`windows-latest`, and a container with nothing in it but Node and git — the
+last one because node-pty being a compile-time dependency made the build
+impossible on a machine without a compiler, and the other two could not see it.
+What remains is under "Deferred, deliberately" in the plan: choices, not gaps.
+
+`README.md` is the user guide and is the thing to keep accurate when behaviour
+changes; `CHANGELOG.md` records what each build is.
 
 ## Commands
 

@@ -5,9 +5,11 @@ existing AI coding CLIs work together under one **Operator agent**. The Operator
 assigns tasks, keeps the git history, and has the only say over what lands.
 **Worker agents** create branches and scripts but never merge.
 
-Status as of 2026-11-11: **Phases 0–6 complete.** The plan is built, and CI is
-green on Linux and Windows. What is left is in "Still open" at the end; it
-needs a live agent run rather than code.
+Status as of 2026-11-13: **Build 1 (1.0.0).** Phases 0–6 are complete, every
+item on `bugfixy.md` is closed, and CI is green on three machines — Ubuntu,
+Windows, and a container with nothing in it but Node and git. All four
+assistants have been driven against their real CLIs. What is left is in
+"Deferred, deliberately" at the end: choices, not gaps.
 
 ---
 
@@ -159,7 +161,7 @@ branch, commit and merge.
 **Linux runs Maya.** This was the open item that mattered most, and it is now
 a fact rather than an argument. `.github/workflows/ci.yml` runs the suite on
 `ubuntu-latest` and `windows-latest`, and both legs are green: install, build,
-lint, 240 tests, the MCP server (17/17), the agent probes (24/24), the
+lint, the full suite, the MCP server (17/17), the agent probes (24/24), the
 packaged bundle (12/12) and the panes (23/23). Two things the first runs
 turned up are worth keeping in mind:
 

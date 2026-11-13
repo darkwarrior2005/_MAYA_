@@ -55,7 +55,7 @@ const projectArg = {
 
 export function buildServer(): McpServer {
   const server = new McpServer(
-    { name: "maya", version: "0.1.0" },
+    { name: "maya", version: "1.0.0" },
     {
       instructions: [
         "Maya runs several AI coding CLIs under one Operator agent against a git",

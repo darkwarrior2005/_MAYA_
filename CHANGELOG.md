@@ -1,0 +1,69 @@
+# Changelog
+
+## Build 1 — 1.0.0
+
+The first complete build. Everything in the original plan is implemented, all
+four assistants have been driven against their real CLIs rather than stubs, and
+the whole thing has been installed and used on both Windows and Linux.
+
+### What it does
+
+- **An Operator that thinks.** It reads a request, decides whether it is one
+  job or several, hands each piece to a worker, reviews what comes back, writes
+  the summary, and merges. It also answers workers' questions, so the person is
+  not interrupted for things the session already knows.
+- **Four assistants supported** — Claude Code, GitHub Copilot CLI, Google
+  Antigravity and OpenAI Codex — each behind one adapter, with no orchestrator
+  code branching on which tool an agent is. A project can add another by naming
+  a module in its config.
+- **Two live windows on one session.** A terminal pane view and a web
+  interface, both reading the same event log, both able to answer the same
+  questions. Either can be closed and reopened without losing anything.
+- **Work isolated until it is merged.** Each worker runs in its own git
+  worktree on its own branch. The Operator is the only thing that merges, one
+  branch at a time, and never merges work that failed, stalled or came back
+  empty.
+- **Two ways for an agent to reach out.** `@operator` for anything about the
+  task, `@user` for the things only a person can settle.
+- **Agent scorecards.** `maya agents` measures the tools Maya drives rather
+  than repeating their claims, and `--live` measures them by giving each a real
+  task.
+- **An MCP server**, so another agent can read a session, post to it, reach
+  the person, and answer the Operator.
+
+### What this build was shaped by
+
+Most of the work after the features were built went into things that were
+quietly wrong. Each of these is written up where it happened, in
+`docs/FINDINGS.md` and `bugfixy.md`:
+
+- **Nothing had been run on Linux.** CI now runs the suite on Ubuntu and
+  Windows, and the installer in a container with no compiler. That last job
+  found that `pnpm build` could not run at all on a machine without build
+  tools: node-pty was called an optional dependency but was a compile-time one.
+- **Measurements that flattered failure.** The agent probes scored a tool whose
+  login had expired as the fastest of three, because failing was quick. A
+  probe that cannot be taken now says so rather than showing a number.
+- **Prompt wording decided whether a feature worked at all.** Given a task it
+  could not do honestly, one model asked the Operator a question no Operator
+  could answer, and another asked in prose where nothing was listening.
+  Rewriting the briefing fixed the first. The second is why a worker that
+  reports success, changes nothing and tells nobody is now reported rather
+  than passed over.
+- **A prompt containing `%PATH%` leaked the machine's PATH into it**, because
+  on Windows an npm-installed tool is a batch shim and the command line goes
+  through `cmd.exe`. Prompts no longer travel on a command line.
+- **Two fixes that were wrong before they were right**, both passing their
+  tests while wrong: a concurrency assertion that measured a race three
+  different ways before being rewritten to measure nothing, and a token
+  subtraction copied from one vendor's convention to another's, where the same
+  field name means the opposite thing.
+
+### Known limits
+
+- Worker panes are read-only. There is no process behind them to take
+  keystrokes; anything you want to say goes into the chat.
+- No spending cap of Maya's own. The limits are the ones on your accounts.
+- Antigravity's own permission prompts cannot be answered when it is driven by
+  a program, so anything needing one is refused. Maya reports which.
+- Linux has been tested in a container, not on a desktop distribution.
