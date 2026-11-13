@@ -46,12 +46,40 @@ if [ "${NODE_MAJOR}" -lt 20 ]; then
   die "Node ${NODE_MAJOR} is too old. Maya needs 20 or newer (25 is what it was developed on)."
 fi
 
+# Both halves of this were wrong until a Linux container was used to check
+# them. Node 25 — the version Maya is developed on — no longer bundles
+# corepack, so that branch never runs on a current Node. And the advice the
+# other branch gave, plain `npm install -g pnpm`, fails with EACCES for anyone
+# who does not own Node's global directory, which on a stock Linux box is
+# every normal user. Following Maya's own instructions led to a second dead
+# end. The prefix install below needs no root and lands in the same
+# ~/.local/bin this script links into a few lines later.
+pnpm_advice() {
+  cat >&2 <<ADVICE
+
+Install it without needing root:
+
+    npm install -g pnpm --prefix "\${HOME}/.local"
+    export PATH="\${HOME}/.local/bin:\${PATH}"
+
+That is the same directory this script installs maya into. Then run this
+script again.
+ADVICE
+}
+
 if ! command -v pnpm >/dev/null 2>&1; then
   if command -v corepack >/dev/null 2>&1; then
     say "pnpm is missing; enabling it through corepack"
-    corepack enable pnpm >/dev/null 2>&1 || die "corepack could not enable pnpm. Install it with: npm install -g pnpm"
+    corepack enable pnpm >/dev/null 2>&1 || {
+      printf '\033[31merror:\033[0m %s\n' "corepack could not enable pnpm." >&2
+      pnpm_advice
+      exit 1
+    }
   else
-    die "pnpm is not on PATH. Install it with: npm install -g pnpm"
+    printf '\033[31merror:\033[0m %s\n' \
+      "pnpm is not on PATH, and this Node does not ship corepack (Node 25 dropped it)." >&2
+    pnpm_advice
+    exit 1
   fi
 fi
 

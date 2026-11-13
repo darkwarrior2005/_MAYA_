@@ -31,7 +31,7 @@ You need three things before you start, on either platform:
 | --- | --- | --- |
 | **Node 20 or newer** | Maya is a Node program. Developed on 25. | `node --version` |
 | **git** | Maya drives it; branches and worktrees are the whole design. | `git --version` |
-| **pnpm** | The workspace uses it. The installer will enable it through corepack if it can. | `pnpm --version` |
+| **pnpm** | The workspace uses it. Node 25 dropped corepack, so install it yourself: `npm install -g pnpm --prefix "$HOME/.local"` needs no root and lands where this installer already puts things. | `pnpm --version` |
 
 Everything else the installer does for you.
 
@@ -42,7 +42,7 @@ git clone https://github.com/darkwarrior2005/_MAYA_.git
 ```
 
 ```bash
-cd _MAYA_ && chmod +x install.sh && ./install.sh
+cd _MAYA_ && ./install.sh
 ```
 
 That installs `maya` and `maya-mcp` into `~/.local/bin` and adds that directory

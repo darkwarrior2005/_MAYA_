@@ -341,7 +341,7 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
 /** Whether the optional native module is actually installed. */
 async function ptyAvailable(): Promise<boolean> {
   try {
-    await import("node-pty");
+    await import(NODE_PTY);
     return true;
   } catch {
     return false;
@@ -400,11 +400,54 @@ export function quoteForCmd(token: string): string {
   return `"${escaped}"`;
 }
 
-type NodePtyModule = typeof import("node-pty");
+/**
+ * The slice of node-pty Maya uses, declared here rather than imported.
+ *
+ * `typeof import("node-pty")` made the package a **compile-time** dependency,
+ * which is not what "optional" means. node-pty ships no Linux prebuild, so on
+ * a Linux box without a C++ toolchain pnpm skips it — and then `tsc` cannot
+ * find its declarations and the whole build fails with TS2307. `pnpm build`,
+ * and therefore `install.sh`, could not run there at all. CI never saw it
+ * because GitHub's runners carry build tools, so node-pty compiles and the
+ * types exist; it took a container with nothing but Node and git to show it.
+ *
+ * The cost of declaring it here is that these types are Maya's claim about
+ * node-pty's shape rather than node-pty's own. That is the trade: the surface
+ * used is four methods wide and changes rarely, and the alternative is a
+ * project that cannot be built on a machine without a compiler.
+ */
+interface PtyProcess {
+  write(data: string): void;
+  kill(signal?: string): void;
+  onData(listener: (chunk: string) => void): void;
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void): void;
+}
+
+interface NodePtyModule {
+  spawn(
+    file: string,
+    args: string[],
+    options: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      env?: Record<string, string>;
+    },
+  ): PtyProcess;
+}
+
+/**
+ * Held in a variable on purpose. With a literal specifier TypeScript resolves
+ * the module at compile time, which is the thing that breaks the build where
+ * node-pty is not installed; through a variable it stays a runtime lookup,
+ * which is what an optional dependency needs to be.
+ */
+const NODE_PTY = "node-pty";
 
 async function importNodePty(): Promise<NodePtyModule> {
   try {
-    return await import("node-pty");
+    return (await import(NODE_PTY)) as NodePtyModule;
   } catch (cause) {
     throw new Error(
       'the "pty" transport needs the optional node-pty package, which is not installed ' +
