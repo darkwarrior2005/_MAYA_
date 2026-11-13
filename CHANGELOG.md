@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **An Antigravity worker can be allowed to run commands.** Headless `agy`
+  cannot show a permission prompt, so anything needing one was auto-denied —
+  and the run still reported success with an empty answer, which read as an
+  agent choosing to do nothing rather than one that was never allowed. A
+  worker's `allowedTools` are now passed as session-only `--settings`
+  permission rules, so `"allowedTools": ["command(npm test)"]` lets that
+  worker run that command and nothing else. The tool's own `settings.json` is
+  never written to, and with nothing granted the default is unchanged.
+  Verified against the real tool.
+- A pattern the tool would not understand is **refused before the run**,
+  naming the likely mistake, because such a pattern grants nothing silently
+  and the blame lands on the agent. Antigravity wants `command(npm test)`;
+  Copilot's `write(src/**)` means nothing to it, and the tests check each
+  validator rejects the other's grammar.
+
 ## Build 1 — 1.0.0
 
 The first complete build. Everything in the original plan is implemented, all
@@ -64,6 +81,7 @@ quietly wrong. Each of these is written up where it happened, in
 - Worker panes are read-only. There is no process behind them to take
   keystrokes; anything you want to say goes into the chat.
 - No spending cap of Maya's own. The limits are the ones on your accounts.
-- Antigravity's own permission prompts cannot be answered when it is driven by
-  a program, so anything needing one is refused. Maya reports which.
+- Antigravity's three ask-a-person tools cannot be approved by a permission
+  rule — the tool says so itself — so a run needing one is refused whatever a
+  worker was granted. Maya reports which.
 - Linux has been tested in a container, not on a desktop distribution.

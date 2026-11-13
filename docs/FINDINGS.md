@@ -49,7 +49,41 @@ an invalid `--model` — these are what came back:
   `[{ action: "command", display_name: "RunCommand" }]`, which Maya ignored
   entirely, leaving one line on stderr as the sole evidence — so the reader
   concludes the agent declined the work when in fact Maya never allowed it.
-  Now reported as a non-fatal error naming what to allow.
+  Now reported as a non-fatal error naming what to allow, **and grantable**:
+  see the next finding.
+
+**`--settings` is how an Antigravity worker is allowed to do anything.** The
+denial above made an Antigravity worker close to useless for real work —
+anything needing a command was refused, and the refusal looked like a choice.
+Its own stderr names the way out, and the flag that applies it per run is
+`--settings`: "Settings for this session only, never saved: a JSON object of
+settings.json keys". So a worker's `allowedTools` become
+`--settings {"permissions":{"allow":["command(git status)"]}}`, granted for
+one run, with the user's own `settings.json` untouched. Verified against the
+real tool: granted `command(git status)`, it ran the command and reported the
+branch name it could only have learned by running it.
+
+The grammar is the tool's own, read out of the binary rather than guessed —
+the kinds it writes with a wildcard are `command`, `mcp`, `read_file`,
+`write_file`, `read_url`, `download_url`, `execute_url`, and the examples it
+carries are `command(npm test)`, `command(git status)`, `command(*)`,
+`mcp(chrome-devtools/*)`. **The `command` target is a command line, not a tool
+name**: the tool is `run_command`, and `command(run_command)` grants nothing,
+silently, which is exactly how an agent gets blamed for refusing work it was
+never allowed to do. `describeBadAntigravityPermission` refuses a pattern
+before the run for that reason, the same guard Copilot's permissions have, and
+the two grammars are deliberately checked against each other in the tests
+because a worker profile copied from one tool to the other would grant nothing
+at all.
+
+Two limits to keep in mind. `--settings` replaces the keys it names for that
+session, so a worker granted `command(git status)` does not also inherit the
+person's own allow-rules — it narrows rather than widens, which is the safe
+direction but can surprise. And the binary carries a second message for a
+class of tools where **"Settings allow-rules do not apply"** — the ones whose
+purpose is to ask a person something. No allow-rule grants those; only
+`--dangerously-skip-permissions` would, and invariant 5 says Maya does not
+reach for it.
 - **`result.error` is where a real failure explains itself**, next to
   `finished_reason`. Maya was discarding it and printing `run finished with
   status ERROR`. The text it threw away: `invalid model selection (--model

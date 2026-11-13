@@ -207,8 +207,9 @@ What is left is in "Deferred, deliberately" below — choices, not gaps.
   session could be given a pane that hosts it.
 - **Antigravity's `ask_permission` tools.** Its tool list includes
   `ask_permission`, `ask_custom_permission` and `ask_question`, which headless
-  mode cannot answer — so a run needing one is auto-denied and
-  `result.denied_actions` says which. Maya reports that rather than wiring the
-  prompts up: answering them would mean brokering another CLI's permission
-  dialogue through the bus, which is the Operator's job to avoid, not to take
-  on.
+  mode cannot answer. Everything else is now grantable per worker through
+  `allowedTools` — `command(npm test)` and the rest, passed as session-only
+  `--settings` — but these three are the class the tool itself says
+  allow-rules do not apply to, and only `--dangerously-skip-permissions` would
+  approve them. Maya reports what was denied rather than reaching for that
+  flag or brokering another CLI's permission dialogue through the bus.

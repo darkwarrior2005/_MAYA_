@@ -54,7 +54,7 @@ const STATIC_CONS: Record<string, string[]> = {
   ],
   "antigravity-cli": [
     "A denied permission still reports the run as a success with an empty answer — Maya reads `denied_actions` to catch it",
-    "Headless mode cannot answer its own permission prompts, so anything needing `command` is auto-denied",
+    "Headless mode cannot prompt, so a command has to be granted in advance with `allowedTools: [\"command(npm test)\"]` on the worker",
     "Sends text in fragments, which Maya has to reassemble per step",
     "Slowest of the four on a one-line task, by a wide margin",
   ],

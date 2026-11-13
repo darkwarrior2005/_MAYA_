@@ -11,6 +11,93 @@ import { resolveExecutable } from "./which.js";
 
 export type AntigravityMode = "accept-edits" | "auto" | "plan";
 
+/**
+ * The rule kinds Antigravity's permission patterns use.
+ *
+ * Taken from the tool itself rather than guessed: these are the kinds it
+ * writes with a wildcard, and the examples it carries are `command(npm test)`,
+ * `command(git status)`, `command(*)`, `mcp(chrome-devtools/*)` and
+ * `mcp(buganizer/get_bugs)`. The `command` target is a command line, not a
+ * tool name — `command(run_command)` grants nothing at all.
+ */
+const PERMISSION_KINDS = [
+  "command",
+  "mcp",
+  "read_file",
+  "write_file",
+  "read_url",
+  "download_url",
+  "execute_url",
+] as const;
+
+/**
+ * What is wrong with a permission pattern, or null when it is fine.
+ *
+ * Named for its tool because Copilot has one of its own with a different
+ * grammar, and the two must never be mistaken for each other: Copilot's
+ * `write(src/**)` means nothing here, and `command(npm test)` means nothing
+ * there.
+ *
+ * Checked before the run for the same reason Copilot's are: a pattern
+ * Antigravity does not understand grants nothing, silently, and the run then
+ * looks like an agent that declined the work. The shape is `kind(target)`.
+ */
+export function describeBadAntigravityPermission(pattern: string): string | null {
+  const text = pattern.trim();
+  if (!text) return "an empty string is not a permission pattern";
+
+  const match = /^([a-z_]+)(?:\((.*)\))?$/.exec(text);
+  if (!match) {
+    return `"${pattern}" is not a permission pattern — Antigravity expects kind(target), as in command(npm test)`;
+  }
+
+  const [, kind, target] = match;
+  if (!PERMISSION_KINDS.includes(kind as (typeof PERMISSION_KINDS)[number])) {
+    // The likeliest mistake, and the one that costs a whole run: naming the
+    // tool instead of the permission. Antigravity's tool is `run_command`;
+    // the permission over it is `command(...)`.
+    const hint = text.includes("command")
+      ? ' — did you mean `command(<the command line>)`, for example command("npm test")?'
+      : ` — the kinds are ${PERMISSION_KINDS.join(", ")}`;
+    return `"${pattern}" is not an Antigravity permission kind${hint}`;
+  }
+  if (target !== undefined && target.trim() === "") {
+    return `"${pattern}" has an empty target — use ${kind}(*) to mean anything`;
+  }
+  return null;
+}
+
+/**
+ * The `--settings` payload for a worker's permissions, or null when it has
+ * none and nothing should be passed.
+ *
+ * Every pattern is checked first, and a bad one throws rather than being
+ * dropped: silently granting less than a profile asked for is how an agent
+ * ends up blamed for refusing work it was never allowed to do.
+ */
+function buildPermissions(allow?: string[], deny?: string[]): string | null {
+  const allowed = allow ?? [];
+  const denied = deny ?? [];
+  if (allowed.length === 0 && denied.length === 0) return null;
+
+  for (const pattern of [...allowed, ...denied]) {
+    const problem = describeBadAntigravityPermission(pattern);
+    if (problem) {
+      throw new Error(
+        `antigravity-cli was given a permission it cannot use: ${problem}. ` +
+          "Fix it on this worker in .maya/config.json.",
+      );
+    }
+  }
+
+  return JSON.stringify({
+    permissions: {
+      ...(allowed.length > 0 ? { allow: allowed } : {}),
+      ...(denied.length > 0 ? { deny: denied } : {}),
+    },
+  });
+}
+
 export interface AntigravityAdapterOptions {
   /**
    * `accept-edits` lets a worker write files without a prompt nobody can
@@ -21,6 +108,44 @@ export interface AntigravityAdapterOptions {
   /** Opt in to --dangerously-skip-permissions. Off by default. */
   skipPermissions?: boolean;
   rawLogPath?: (agentId: string) => string;
+}
+
+/**
+ * The argv for one run. Pure and exported, so what Maya actually asks
+ * Antigravity to do can be asserted without spawning anything — the first
+ * attempt at testing this poked at a property of the handle that does not
+ * exist, and passed while checking nothing.
+ */
+export function buildAntigravityArgs(
+  options: AgentRunOptions,
+  adapter: AntigravityAdapterOptions = {},
+): string[] {
+  const args = ["--output-format", "stream-json", "--mode", adapter.mode ?? "accept-edits"];
+  if (options.model) args.push("--model", options.model);
+  if (options.resumeSessionId) args.push("--conversation", options.resumeSessionId);
+  if (adapter.skipPermissions) args.push("--dangerously-skip-permissions");
+
+  // A worker's permissions, as session-only settings.
+  //
+  // This is the fix for the thing that made an Antigravity worker close to
+  // useless for real work: headless `agy` cannot show a permission prompt, so
+  // anything needing one was auto-denied — and the run still came back
+  // `status: "SUCCESS"` with an empty answer, so it read as an agent that
+  // chose to do nothing rather than one that was never allowed. Its own
+  // stderr names the way out: an allow-rule under `permissions.allow`.
+  // `--settings` takes those for one session and never writes them anywhere,
+  // so Maya grants exactly what a worker profile asked for without touching
+  // the user's own settings.json.
+  //
+  // Not a bypass, and invariant 5 still holds: with no `allowedTools` on the
+  // profile nothing is passed and the default is unchanged.
+  // `--dangerously-skip-permissions` remains opt-in and is still the only
+  // thing that approves everything.
+  const permissions = buildPermissions(options.allowedTools, options.deniedTools);
+  if (permissions) args.push("--settings", permissions);
+
+  args.push("-p", options.prompt);
+  return args;
 }
 
 export class AntigravityCliAdapter implements AgentAdapter {
@@ -53,11 +178,7 @@ export class AntigravityCliAdapter implements AgentAdapter {
   }
 
   async start(options: AgentRunOptions): Promise<AgentHandle> {
-    const args = ["--output-format", "stream-json", "--mode", this.options.mode ?? "accept-edits"];
-    if (options.model) args.push("--model", options.model);
-    if (options.resumeSessionId) args.push("--conversation", options.resumeSessionId);
-    if (this.options.skipPermissions) args.push("--dangerously-skip-permissions");
-    args.push("-p", options.prompt);
+    const args = buildAntigravityArgs(options, this.options);
 
     return new SubprocessAgentHandle(
       options,

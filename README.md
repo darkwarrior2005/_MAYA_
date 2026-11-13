@@ -96,7 +96,7 @@ with whatever is there and ignores the rest.
 | --- | --- | --- |
 | **Claude Code** | From Anthropic | Runs inside Maya rather than as a separate process, so it reports the most detail. |
 | **GitHub Copilot CLI** | `npm i -g @github/copilot` | Each run costs one premium request, whatever the outcome. |
-| **Google Antigravity** | antigravity.google/cli (not npm) | Thorough and slow. Cannot answer its own permission prompts when driven by a program, so anything needing one is refused — Maya tells you which. |
+| **Google Antigravity** | antigravity.google/cli (not npm) | Thorough and slow. Cannot show a permission prompt when driven by a program, so it needs to be told in advance which commands it may run — see [running commands](#letting-a-worker-run-commands). |
 | **OpenAI Codex** | `npm install -g @openai/codex` | Sandboxed by design. Refuses to work outside a git repository. |
 
 ### An account with money or quota on it
@@ -428,13 +428,49 @@ being the default nobody noticed.
 
 Two consequences worth knowing:
 
-- **Shell commands are usually refused.** An assistant that wants to run a
-  command will often be denied, because granting that is not the default.
-  Antigravity reports exactly which permission it was refused, and Maya passes
-  that on.
+- **Shell commands are refused unless you grant them.** An assistant that
+  wants to run a command will be denied, because granting that is not the
+  default. See below for how to allow specific ones.
 - **Work is isolated until it is merged.** Each worker edits its own private
   copy of the repository, so a worker that goes wrong cannot damage your
   working files. The Operator is the only thing that merges.
+
+### Letting a worker run commands
+
+Plenty of real work needs a command — running the tests, checking `git status`.
+You allow specific ones per worker, by naming them in `allowedTools` on that
+worker in `.maya/config.json`:
+
+```json
+{
+  "id": "worker-antigravity",
+  "tool": "antigravity-cli",
+  "enabled": true,
+  "allowedTools": ["command(npm test)", "command(git status)"]
+}
+```
+
+Maya passes those to the tool for that one run and never writes them into the
+tool's own settings. You can also list `deniedTools` the same way.
+
+The patterns are the tool's own, and they differ between tools, which matters
+because a pattern the tool does not understand grants **nothing**:
+
+| Tool | Looks like | Notes |
+| --- | --- | --- |
+| **Antigravity** | `command(npm test)`, `command(*)`, `mcp(server/tool)`, `read_file(src/**)` | The target is a command line, not a tool name. `command(run_command)` grants nothing. |
+| **Copilot** | `write`, `write(src/**)`, `shell(git:*)`, `mcp(server)` | A different grammar entirely. |
+| **Codex** | — | Takes a sandbox setting instead of a list. Use `"sandbox": "workspace-write"`. |
+| **Claude Code** | — | Uses its own permission mode. |
+
+Maya checks these before it starts a run and refuses a pattern it knows the
+tool will not understand, naming the likely mistake, rather than letting you
+pay for a run that was never allowed to do the work.
+
+> There is a limit worth knowing: Antigravity has a few tools whose approval
+> cannot be granted this way at all — the ones whose whole purpose is to ask a
+> person something. If one of those is needed, the run is denied whatever you
+> put in `allowedTools`, and Maya tells you which tool it was.
 
 ---
 
@@ -513,7 +549,8 @@ else on your machine.
 | Doctor warns about a **shim** | A stand-in from another program is shadowing the real CLI on your PATH. | Either accept it or put the real one earlier on your PATH. |
 | A worker is marked **stalled** | It went quiet for longer than its timeout. | Look in `.maya/logs/<worker>.ndjson` for the last thing it did. Its work is not merged. |
 | A worker "changed nothing and asked nobody" | It stopped without doing the job. | Read its last words in the message. Usually an ambiguous task or a refused permission. |
-| Antigravity "was denied RunCommand" | It needed to run a shell command, which Maya does not grant by default. | Allow it in that tool's own settings, or give the task to a different worker. |
+| Antigravity "was denied RunCommand" | It needed to run a shell command, which is not granted by default. | Add `"allowedTools": ["command(<the command>)"]` to that worker — see [letting a worker run commands](#letting-a-worker-run-commands). |
+| "is not an Antigravity permission kind" | A pattern in `allowedTools` is not one that tool understands. | The message names the likely fix. Antigravity wants `command(npm test)`; Copilot's `write` means nothing to it. |
 | The browser window is empty | The daemon is not running for that project. | `maya web -d <dir>` starts one. `maya doctor` says whether one is already up. |
 | A login that worked yesterday fails | Stored sessions expire. | Sign in again with that tool's own `login` command. |
 
