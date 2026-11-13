@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { freePort } from "./ports.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const MAYA = join(repoRoot, "packages/cli/dist/main.js");
@@ -121,19 +122,6 @@ export function createExpiredAgent() {
   };
 }
 `;
-
-/** A port nothing is listening on, from the OS rather than from hope. */
-async function freePort() {
-  const { createServer } = await import("node:net");
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-}
 
 function run(args) {
   return new Promise((resolve) => {

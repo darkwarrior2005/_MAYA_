@@ -125,7 +125,9 @@ export function SecretChannel({ events }: { events: BusEvent[] }): ReactElement 
                 // is worded as a report about the worker rather than as
                 // something the worker said.
                 event.payload.type === "worker_stopped_short"
-                ? `stopped without changing anything, and asked nobody: ${event.payload.lastWords}`
+                ? event.payload.lastWords
+                  ? `stopped without changing anything, and asked nobody: ${event.payload.lastWords}`
+                  : "stopped without changing anything, asked nobody, and said nothing"
                 : event.type}
           </span>
           <time dateTime={event.createdAt}>{event.createdAt.slice(11, 16)}</time>

@@ -7,7 +7,7 @@ import type {
   AgentRunOptions,
 } from "./adapter.js";
 import { SubprocessAgentHandle, parseJsonLine } from "./subprocess-adapter.js";
-import { commandExists } from "./which.js";
+import { resolveExecutable } from "./which.js";
 
 /**
  * Permission patterns, not tool names. Copilot's rules take the form
@@ -64,8 +64,8 @@ export class CopilotCliAdapter implements AgentAdapter {
   constructor(private readonly options: CopilotAdapterOptions = {}) {}
 
   async check(): Promise<AdapterHealth> {
-    const installed = await commandExists("copilot");
-    if (!installed) {
+    const resolvedPath = await resolveExecutable("copilot");
+    if (!resolvedPath) {
       return {
         installed: false,
         authenticated: false,
@@ -78,6 +78,7 @@ export class CopilotCliAdapter implements AgentAdapter {
     return {
       installed: true,
       authenticated: true,
+      resolvedPath,
       // A token in the environment is a fact; a stored login is a hope.
       verified: hasToken,
       detail: hasToken

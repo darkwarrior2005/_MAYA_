@@ -167,10 +167,21 @@ passed, so the first one containing a space arrives as several. Codex received
 the first word of the task and rejected the second: `error: unexpected
 argument 'with' found`. Node's own DEP0190 warns about this. cmd.exe is now
 invoked directly with the command line built here, each token quoted and the
-whole wrapped in one more pair because `/s` strips the outermost. One residual
-caveat, documented at `quoteForCmd`: `%VAR%` in a prompt is still expanded by
-cmd.exe when the tool is a batch shim, because the escape for that works only
-inside a batch file.
+whole wrapped in one more pair because `/s` strips the outermost.
+
+**That still left `%NAME%`, and it was worse than a mangled prompt.** cmd.exe
+expands a percent variable *inside* a quoted argument, and no escape helps —
+the one it offers works only inside a batch file. Measured through a real
+round trip rather than assumed: a prompt reading `Explain what %PATH% means`
+reached the agent with the machine's entire PATH spliced into it. The prompt
+ruined, and the user's directory layout handed to a third-party tool that had
+no business seeing it. The answer is to stop putting arbitrary text on a
+command line at all. `codex exec` reads its prompt from stdin when given `-`,
+so Maya writes it there and closes the pipe; a real run asked to echo
+`%PATH%` back now returns it literally. `SubprocessSpawnSpec.stdin` is open to
+any adapter whose tool can do the same, and leaving it unset keeps stdin at
+`"ignore"` — the immediate EOF that stops `codex exec` hanging while it waits
+to read.
 
 **Codex refuses to work outside version control**, with "Not inside a trusted
 directory and --skip-git-repo-check was not specified". The live probe

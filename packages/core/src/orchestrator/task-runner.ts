@@ -39,11 +39,12 @@ export interface TaskRunOutcome {
   ok: boolean;
   error?: string;
   /**
-   * Set when the run reported success, committed nothing and said nothing to
-   * anybody — the worker's closing words, so a caller can show why rather
-   * than printing a bare "finished ok" over an empty commit.
+   * Present when the run reported success, committed nothing and said nothing
+   * to anybody, so a caller can show why rather than printing a bare
+   * "finished ok" over an empty commit. Its presence is the signal;
+   * `lastWords` is absent when the worker said nothing at all.
    */
-  stoppedShort?: string;
+  stoppedShort?: { lastWords?: string };
 }
 
 /**
@@ -153,16 +154,20 @@ export class TaskRunner {
     // listening. This goes on the secret channel because that panel exists to
     // put things the person must see in front of them, and being asked
     // nothing is exactly how this failure feels from the other side.
-    const stoppedShort =
-      result.ok && !committed && asked.length === 0 && !reachedUser
-        ? lastWords(transcript)
-        : null;
+    //
+    // The quote is not what decides this. It used to be — `stoppedShort` was
+    // the worker's closing words or null — so a worker that stopped having
+    // said nothing produced no report at all, which is the quietest form of
+    // the very failure this catches. Antigravity does exactly that when every
+    // tool it tried was denied: tool calls, no text.
+    const stoppedShort = result.ok && !committed && asked.length === 0 && !reachedUser;
+    const closing = stoppedShort ? lastWords(transcript) : null;
     if (stoppedShort) {
       this.bus.publish("secret", input.agent.id, "worker_stopped_short", {
         type: "worker_stopped_short",
         taskId,
         agentId: input.agent.id,
-        lastWords: stoppedShort,
+        ...(closing ? { lastWords: closing } : {}),
       });
     }
 
@@ -185,7 +190,7 @@ export class TaskRunner {
         stalled: result.stalled,
         ok: result.ok,
         ...(result.error ? { error: result.error } : {}),
-        ...(stoppedShort ? { stoppedShort } : {}),
+        ...(stoppedShort ? { stoppedShort: { ...(closing ? { lastWords: closing } : {}) } } : {}),
       };
     }
 
@@ -214,7 +219,7 @@ export class TaskRunner {
       stalled: false,
       ok: merge.merged,
       ...(merge.message && !merge.merged ? { error: merge.message } : {}),
-      ...(stoppedShort ? { stoppedShort } : {}),
+      ...(stoppedShort ? { stoppedShort: { ...(closing ? { lastWords: closing } : {}) } } : {}),
     };
   }
 }

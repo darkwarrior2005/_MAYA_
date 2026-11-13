@@ -3,7 +3,11 @@ import { makeAntigravityParser } from "../src/adapters/antigravity-cli.js";
 import { totalTokens } from "../src/usage/token-tracker.js";
 
 /**
- * Captured from real `agy` 1.5.6 runs, copied rather than composed.
+ * Captured from real `agy` 1.5.6 runs, copied rather than composed, and
+ * re-checked against 1.5.8 a day later — `agy` updates itself, so these
+ * samples are a record of one version rather than a contract. The re-check
+ * found the same `state: "ERROR"`, the same `{ type, message }` error object
+ * and the same token arithmetic (23978 + 148 = 24126, cache excluded).
  *
  * This is `bugfixy.md` B3: the adapter's failure handling was inferred from
  * the documentation because no failing sample existed, and the note said to

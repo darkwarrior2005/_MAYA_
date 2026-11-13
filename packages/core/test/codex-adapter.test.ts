@@ -299,10 +299,18 @@ describe("the Codex command line", () => {
     expect(args[args.indexOf("--sandbox") + 1]).toBe("read-only");
   });
 
-  it("puts the prompt behind -- so a leading dash is not read as a flag", () => {
-    const args = buildCodexArgs(run({ prompt: "--help the parser is wrong" }));
+  it("asks Codex to read the prompt from stdin, and never puts it on the command line", () => {
+    // Measured, not theoretical: an npm-installed `codex` is a .cmd, so the
+    // command line goes through cmd.exe, which expands %NAME% inside a quoted
+    // argument. A prompt reading "Explain what %PATH% means" arrived with the
+    // machine's whole PATH spliced into it — a mangled prompt and the user's
+    // directory layout handed to a third-party tool. Stdin has no such layer.
+    const prompt = "Explain what %PATH% means and --help the parser";
+    const args = buildCodexArgs(run({ prompt }));
     expect(args.at(-2)).toBe("--");
-    expect(args.at(-1)).toBe("--help the parser is wrong");
+    expect(args.at(-1)).toBe("-");
+    expect(args).not.toContain(prompt);
+    expect(args.some((arg) => arg.includes("%"))).toBe(false);
   });
 
   it("keeps exec's own flags in front of the resume subcommand", () => {
@@ -311,8 +319,8 @@ describe("the Codex command line", () => {
     expect(resumeAt).toBeGreaterThan(args.indexOf("--json"));
     expect(resumeAt).toBeGreaterThan(args.indexOf("--sandbox"));
     expect(args[resumeAt + 1]).toBe("0199a213");
-    // The follow-up prompt still goes last, after the separator.
-    expect(args.at(-1)).toBe("do the thing");
+    // The follow-up prompt is read from stdin here too.
+    expect(args.at(-1)).toBe("-");
   });
 
   it("passes a model through when the worker names one", () => {

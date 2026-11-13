@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { freePort } from "./ports.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const require_ = createRequire(join(repoRoot, "packages/core/package.json"));
@@ -102,7 +103,10 @@ check("no adapter plugins are configured by default", doctor.out.includes("no ad
 // --- the web client travels with it -----------------------------------------
 check("the web client was packaged beside the bundle", existsSync(join(home, "web-client/index.html")));
 
-const web = spawn(process.execPath, [entry, "web", "-d", project, "--no-open", "--port", "7911"], {
+// A port the OS says is free, not a hardcoded 7911: a daemon the test
+// suite has not finished closing makes that one fail for no real reason.
+const webPort = await freePort();
+const web = spawn(process.execPath, [entry, "web", "-d", project, "--no-open", "--port", String(webPort)], {
   cwd: elsewhere,
   stdio: "pipe",
 });
@@ -116,7 +120,7 @@ check("it did not report a missing client", !webOut.includes("not built"));
 
 let page = { status: 0, body: "" };
 try {
-  const response = await fetch("http://127.0.0.1:7911/");
+  const response = await fetch(`http://127.0.0.1:${webPort}/`);
   page = { status: response.status, body: await response.text() };
 } catch (error) {
   page = { status: -1, body: String(error) };

@@ -104,8 +104,10 @@ because they were broken once already.
    success either: it is a worker that stopped, usually having asked
    something in prose where no channel was listening, and it is reported
    (`worker_stopped_short`) rather than passed over. Never make that
-   detection depend on the agent having used a marker or phrased a question —
-   one real refusal contained no question mark at all.
+   detection depend on the agent having used a marker, phrased a question, or
+   said anything at all: one real refusal contained no question mark, and a
+   worker whose every tool was denied printed no text whatsoever. The quote
+   the event carries is optional for that reason.
 4. **Pipe transport stays the default** for subprocess adapters. A PTY corrupts
    the long JSON lines these tools emit, and the corruption looks like success.
 5. **No bypass-permission flags by default**, for any tool.

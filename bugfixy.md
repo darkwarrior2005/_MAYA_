@@ -16,12 +16,15 @@ agents have been driven against their real CLIs. The entries are kept for the
 reasoning, each with what was actually done, which in several cases was not
 what the entry predicted.
 
-**E2 is the exception, and this header claimed otherwise for a day.** Its
-documentation half is done — `maya agents` names the binary it resolved and
-warns when that is a VS Code shim — but the `maya doctor` line it asks for was
-never written, and on this machine `copilot` still resolves to the shim. It is
-the two-line change the entry describes, and it is the only thing on this list
-that is not done.
+**E2 is now done too**, after this header claimed it for a day while it was
+not. `maya doctor` names the binary each tool will actually run, and says so
+loudly when that is a shim — on this machine `copilot` resolves to one under
+the VS Code directory, ahead of the real CLI. It turned out not to be the
+two-line change the entry predicted: the adapter is the only thing that knows
+its own binary, so `check()` now reports the resolved path and both doctor and
+the agent probes read it from there, which also deleted a tool-name-to-binary
+map that `probes.ts` had been keeping in violation of this project's own rule
+about branching on tool identity.
 
 Building A1 turned up two more defects, both now fixed and both invisible to
 the unit tests because they only appear in a real repository:
@@ -485,6 +488,15 @@ there, not the installer.
 classifies as safe; a VS Code shim can shadow the real binary on `PATH`.
 *Fix:* documentation, not code — `maya doctor` should say which `copilot`
 binary it resolved, which is a two-line change to the health check.
+
+**FIXED**, and not as a two-line change. Each adapter's `check()` now returns
+`resolvedPath`, because the adapter is the only thing that knows its own
+binary; `maya doctor` prints it and warns when it is a shim, and the agent
+probes read the same field instead of keeping their own map of tool ids to
+binary names — a map that had to learn every new adapter and said "runs
+in-process" about any it did not recognise. On this machine the new line
+reads: `WARN  GitHub Copilot CLI runs G:\...\copilot-shim\copilot.exe — a VS
+Code shim, which can hide the real tool`.
 
 **E3 — Worker panes are read-only.** There is no process behind a pane to
 receive keystrokes (ADR 0001). *Fix:* none needed unless an adapter with a

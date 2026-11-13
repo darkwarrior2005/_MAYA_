@@ -289,7 +289,9 @@ export function formatEvent(event: BusEvent): string | null {
     case "operator_answer":
       return payload.answered ? `-> ${payload.answer}` : `-> no answer: ${payload.answer}`;
     case "worker_stopped_short":
-      return `!! ${payload.agentId} changed nothing and asked nobody: ${payload.lastWords}`;
+      return payload.lastWords
+        ? `!! ${payload.agentId} changed nothing and asked nobody: ${payload.lastWords}`
+        : `!! ${payload.agentId} changed nothing, asked nobody and said nothing`;
     default:
       return `${who}: ${event.type}`;
   }

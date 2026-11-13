@@ -63,7 +63,7 @@ describe("a worker that reported success, changed nothing and asked nobody", () 
 
     expect(outcome.ok).toBe(true);
     expect(outcome.committed).toBeNull();
-    expect(outcome.stoppedShort).toContain("Which list is currently used");
+    expect(outcome.stoppedShort?.lastWords).toContain("Which list is currently used");
 
     const reported = stoppedShortEvents(store);
     expect(reported).toHaveLength(1);
@@ -90,8 +90,30 @@ describe("a worker that reported success, changed nothing and asked nobody", () 
 
     const outcome = await runner.run({ instruction: "delete the unused price list", agent });
 
-    expect(outcome.stoppedShort).toContain("stopped here instead of guessing");
+    expect(outcome.stoppedShort?.lastWords).toContain("stopped here instead of guessing");
     expect(stoppedShortEvents(store)).toHaveLength(1);
+  });
+
+  it("reports a worker that said nothing at all", async () => {
+    // The quietest version, and the one that used to slip through: the quote
+    // decided whether anything was published, so a worker with no words
+    // produced no report. Antigravity does this when every tool it tries is
+    // denied — tool calls, no text — which is precisely when the person most
+    // needs telling.
+    const adapter = new StubAdapter({
+      events: [{ type: "tool_call", agentId: "worker-1", toolName: "run_command", input: {} }],
+    });
+    const { store, runner } = await setup(adapter);
+
+    const outcome = await runner.run({ instruction: "run the build", agent });
+
+    expect(outcome.stoppedShort).toBeDefined();
+    expect(outcome.stoppedShort?.lastWords).toBeUndefined();
+
+    const reported = stoppedShortEvents(store);
+    expect(reported).toHaveLength(1);
+    expect(reported[0]?.payload).toMatchObject({ type: "worker_stopped_short" });
+    expect(reported[0]?.payload).not.toHaveProperty("lastWords");
   });
 
   it("stays quiet when the worker did reach the person", async () => {

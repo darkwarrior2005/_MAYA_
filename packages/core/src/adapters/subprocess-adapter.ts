@@ -27,6 +27,23 @@ export interface SubprocessSpawnSpec {
   args: string[];
   env?: Record<string, string>;
   transport?: Transport;
+  /**
+   * Text to write to the child's stdin, which is then closed.
+   *
+   * For a tool that can read its prompt this way, it is the only place
+   * arbitrary text is safe on Windows. A prompt passed as an argument to a
+   * `.cmd` shim goes through cmd.exe, which expands `%NAME%` inside a quoted
+   * argument — measured, not assumed: a prompt reading "Explain what %PATH%
+   * means" reached the agent with the machine's entire PATH spliced into it.
+   * That is both a mangled prompt and the user's directory layout handed to a
+   * third-party tool. No escape fixes it, because the one cmd.exe offers
+   * works only inside a batch file.
+   *
+   * Absent means stdin is `"ignore"`, an immediate EOF — which matters, since
+   * `codex exec` reads stdin to the end before it starts and an inherited
+   * pipe that nobody closes hangs it indefinitely.
+   */
+  stdin?: string;
 }
 
 export interface SubprocessAdapterConfig {
@@ -151,16 +168,26 @@ export class SubprocessAgentHandle implements AgentHandle {
     // pair before parsing what is left.
     const batch = isBatchFile(command);
     const line = [command, ...spec.args].map(quoteForCmd).join(" ");
-    const child = spawn(
-      batch ? "cmd.exe" : command,
-      batch ? ["/d", "/s", "/c", `"${line}"`] : spec.args,
-      {
-        cwd: options.cwd,
-        env,
-        ...(batch ? { windowsVerbatimArguments: true } : {}),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const file = batch ? "cmd.exe" : command;
+    const argv = batch ? ["/d", "/s", "/c", `"${line}"`] : spec.args;
+    const base = {
+      cwd: options.cwd,
+      env,
+      ...(batch ? { windowsVerbatimArguments: true } : {}),
+    };
+    // Two literal stdio tuples rather than one computed: it is what tells the
+    // type checker stdout and stderr are pipes, so neither needs an assertion
+    // to read below.
+    const child =
+      spec.stdin === undefined
+        ? spawn(file, argv, { ...base, stdio: ["ignore", "pipe", "pipe"] })
+        : spawn(file, argv, { ...base, stdio: ["pipe", "pipe", "pipe"] });
+
+    // Written and closed at once. Leaving it open is what hangs a tool that
+    // reads stdin to EOF before starting work. The `?.` is for the checker's
+    // benefit: `child` is the union of both spawns above, so it cannot see
+    // that this branch is the one with a pipe.
+    if (spec.stdin !== undefined) child.stdin?.end(spec.stdin);
 
     this.child = {
       interrupt: () => child.kill("SIGINT"),

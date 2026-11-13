@@ -131,12 +131,19 @@ export type ChatPayload =
    * `lastWords` is the worker's closing text, quoted so the person can see
    * why it stopped. The type is what says this is an inference by Maya, so no
    * view should present it as the worker having reached out.
+   *
+   * It is **optional**, and that is the point: a worker can stop having said
+   * nothing at all — Antigravity does, when every tool it tried was denied
+   * and it printed only tool calls. Making the quote carry the signal meant a
+   * silent worker produced no report, which is the quietest version of
+   * exactly the failure this event exists to catch. A view with no quote to
+   * show says so rather than saying nothing.
    */
   | {
       type: "worker_stopped_short";
       taskId: TaskId;
       agentId: AgentId;
-      lastWords: string;
+      lastWords?: string;
     };
 
 export interface ConflictOption {

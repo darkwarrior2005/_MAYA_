@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { needPty } from "./need-pty.mjs";
+import { freePort } from "./ports.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const { spawn: ptySpawn } = needPty("planning.mjs");
@@ -120,7 +121,10 @@ async function makeProject() {
 }
 
 /** Runs `maya start --plan` in a real terminal and answers the question. */
-async function planWith(answer, port) {
+async function planWith(answer) {
+  // A port the OS says is free. These used to be 7971-7973, which collide
+  // with a daemon the suite has not finished closing.
+  const port = await freePort();
   const dir = await makeProject();
   let screen = "";
   const pty = ptySpawn(
@@ -141,7 +145,7 @@ async function planWith(answer, port) {
 }
 
 // --- accepting the split -----------------------------------------------------
-const accepted = await planWith("1", 7971);
+const accepted = await planWith("1");
 check("the Operator splits one request into tasks", accepted.asked.includes("splits into 2 tasks"));
 check("it shows each task", accepted.asked.includes("Create docs/parser.md"));
 check("it explains the split", accepted.asked.includes("merge cleanly"));
@@ -163,7 +167,7 @@ check(
 );
 
 // --- declining the split -----------------------------------------------------
-const whole = await planWith("2", 7972);
+const whole = await planWith("2");
 check(
   "choosing one task runs the request whole",
   !existsSync(join(whole.dir, "docs", "parser.md")),
@@ -171,7 +175,7 @@ check(
 );
 
 // --- the person's own words --------------------------------------------------
-const custom = await planWith("Create docs/custom.md only", 7973);
+const custom = await planWith("Create docs/custom.md only");
 check(
   "their own words replace the plan",
   existsSync(join(custom.dir, "docs", "custom.md")) &&

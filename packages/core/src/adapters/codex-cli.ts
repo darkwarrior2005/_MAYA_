@@ -7,7 +7,7 @@ import type {
   AgentRunOptions,
 } from "./adapter.js";
 import { SubprocessAgentHandle, parseJsonLine } from "./subprocess-adapter.js";
-import { commandExists } from "./which.js";
+import { resolveExecutable } from "./which.js";
 
 /**
  * How much the sandbox lets a model-generated command do.
@@ -75,8 +75,8 @@ export class CodexCliAdapter implements AgentAdapter {
   constructor(private readonly options: CodexAdapterOptions = {}) {}
 
   async check(): Promise<AdapterHealth> {
-    const installed = await commandExists("codex");
-    if (!installed) {
+    const resolvedPath = await resolveExecutable("codex");
+    if (!resolvedPath) {
       return {
         installed: false,
         authenticated: false,
@@ -92,6 +92,7 @@ export class CodexCliAdapter implements AgentAdapter {
       return {
         installed: true,
         authenticated: true,
+        resolvedPath,
         verified: true,
         detail: `using ${process.env["CODEX_API_KEY"] ? "CODEX_API_KEY" : "OPENAI_API_KEY"} from env`,
       };
@@ -99,6 +100,7 @@ export class CodexCliAdapter implements AgentAdapter {
     return {
       installed: true,
       authenticated: true,
+      resolvedPath,
       verified: false,
       detail: "relying on credentials stored by `codex login` (not verified)",
     };
@@ -121,7 +123,7 @@ export class CodexCliAdapter implements AgentAdapter {
 
     return new SubprocessAgentHandle(
       options,
-      { command: "codex", args: buildCodexArgs(options, this.options) },
+      { command: "codex", args: buildCodexArgs(options, this.options), stdin: options.prompt },
       {
         parseLine: makeCodexParser(),
         ...(this.options.rawLogPath ? { rawLogPath: this.options.rawLogPath(options.agentId) } : {}),
@@ -157,11 +159,17 @@ export function buildCodexArgs(
   // subcommand's flags, which it does not have.
   if (options.resumeSessionId) args.push("resume", options.resumeSessionId);
 
-  // `--` first, because a prompt is arbitrary text: one that begins with a
-  // dash would otherwise be parsed as a flag, and a prompt of exactly "-"
-  // means "read the prompt from stdin", which would hang waiting on a stdin
-  // nobody is going to write to.
-  args.push("--", options.prompt);
+  // The prompt goes in on stdin, and `-` is how Codex is told to read it
+  // there. `--` keeps that from being read as a flag.
+  //
+  // It used to be passed as an argument, which is safe everywhere except the
+  // place Codex actually installs: `npm i -g` leaves a `.cmd` shim, Node
+  // cannot spawn one directly, so the command line goes through cmd.exe —
+  // and cmd.exe expands `%NAME%` inside a quoted argument. A prompt reading
+  // "Explain what %PATH% means" reached the agent with the machine's entire
+  // PATH spliced into it. Nothing quotes its way out of that; the escape
+  // cmd.exe offers works only inside a batch file. Stdin has no such layer.
+  args.push("--", "-");
   return args;
 }
 

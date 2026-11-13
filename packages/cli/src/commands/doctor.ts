@@ -8,6 +8,7 @@ import {
   isLockAlive,
   loadConfig,
   loadRegistry,
+  looksLikeShim,
   readLock,
 } from "@maya/core";
 
@@ -98,6 +99,22 @@ export function registerDoctor(program: Command): void {
           else warn(`${label}: ${health.detail ?? "not authenticated"}`);
         } else {
           console.log(`ok    ${label}${health.detail ? ` — ${health.detail}` : ""}`);
+          // Which binary this will actually run. Worth a line of its own
+          // because it is not always the one the person has in mind: with VS
+          // Code installed, `copilot` resolves to a shim under the editor's
+          // directory, ahead of the real CLI. Doctor is where someone looks
+          // when a tool misbehaves, and it used to say nothing about this
+          // while `maya agents` did.
+          if (health.resolvedPath) {
+            const shim = looksLikeShim(health.resolvedPath);
+            if (shim) {
+              warn(
+                `${label} runs ${health.resolvedPath} — a ${shim} shim, which can hide the real tool`,
+              );
+            } else {
+              console.log(`      runs ${health.resolvedPath}`);
+            }
+          }
         }
       }
 

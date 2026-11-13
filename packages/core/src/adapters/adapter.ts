@@ -73,4 +73,16 @@ export interface AdapterHealth {
   verified?: boolean;
   version?: string;
   detail?: string;
+  /**
+   * The executable this adapter will actually spawn, resolved on PATH.
+   *
+   * Which binary runs is not always the one the person thinks: on a machine
+   * with VS Code installed, `copilot` resolves to a shim under the editor's
+   * directory, ahead of the real CLI. The adapter is the only thing that
+   * knows its own binary, so it reports the path and `maya doctor` and the
+   * agent probes both read it from here — rather than either of them keeping
+   * a tool-name-to-binary map that has to be updated whenever an adapter is
+   * added. Absent for an adapter that runs in-process.
+   */
+  resolvedPath?: string;
 }

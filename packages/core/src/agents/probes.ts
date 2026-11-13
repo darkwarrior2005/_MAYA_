@@ -20,7 +20,6 @@ import type {
 } from "@maya/shared-types";
 import type { AgentAdapter } from "../adapters/adapter.js";
 import { withRunLimits } from "../adapters/watchdog.js";
-import { resolveExecutable } from "../adapters/which.js";
 import type { MayaConfig } from "../config/maya-config.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
 import { PLATFORM_NOTES, TAGLINES, knownCons, knownPros } from "./traits.js";
@@ -109,9 +108,16 @@ async function probeOne(
     live: false,
   });
 
-  const binary = binaryFor(adapter.id);
-  const resolved = await resolveExecutable(binary);
-  if (binary) {
+  // From the adapter's own health, not a map of tool ids kept here. This file
+  // used to hold `binaryFor()`, which had to learn each new adapter's binary
+  // name and silently said "runs in-process" about any it did not know.
+  //
+  // An adapter that runs in-process reports no path and is still installed —
+  // that is Claude Code, and it has no binary to name. One that is missing
+  // reports neither, and its own `detail` already says how to install it.
+  const resolved = health.resolvedPath ?? null;
+  const inProcess = health.installed && !resolved;
+  if (!inProcess) {
     const shimmed = resolved ? looksLikeShim(resolved) : null;
     probes.push({
       id: "binary",
@@ -128,7 +134,7 @@ async function probeOne(
           // "runs in-process" — which is what it used to say — was false for
           // every uninstalled subprocess tool. Adding Codex is what made it
           // visible; Copilot and Antigravity read the same way when absent.
-          `\`${binary}\` is not on PATH, so there was nothing to resolve`,
+          health.detail ?? "not on PATH, so there was nothing to resolve",
       live: false,
     });
   }
@@ -481,20 +487,19 @@ function scoreFrom(
   return { speed, reliability, autonomy, thrift };
 }
 
-/** Which binary a tool runs as, or "" for one that runs in-process. */
-function binaryFor(tool: string): string {
-  if (tool === "copilot-cli") return "copilot";
-  if (tool === "antigravity-cli") return "agy";
-  if (tool === "codex-cli") return "codex";
-  return "";
-}
-
 /**
  * Whether a resolved path is a launcher standing in front of the real tool.
  * VS Code installs a `copilot` of its own, and Scoop and Chocolatey put stubs
  * on PATH; either can shadow the binary the person meant.
  */
-function looksLikeShim(path: string): string | null {
+/**
+ * The package manager whose shim this path belongs to, or null.
+ *
+ * Shared with `maya doctor`, which reports the same thing: a shim works as a
+ * drop-in until it lags the real CLI or points at a different install, and
+ * either way the person should know which binary is running.
+ */
+export function looksLikeShim(path: string): string | null {
   const lower = path.toLowerCase();
   if (lower.includes("\\microsoft vs code\\") || lower.includes("/microsoft vs code/")) {
     return "VS Code";

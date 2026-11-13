@@ -103,12 +103,22 @@ export function registerRun(program: Command): void {
       // false" and stopping there leaves the reader to guess; the worker
       // nearly always said why, so say it here.
       if (outcome.stoppedShort) {
+        const said = outcome.stoppedShort.lastWords;
         console.log("");
-        console.log("It finished without changing anything, and asked nobody. It said:");
-        console.log("");
-        for (const line of outcome.stoppedShort.split("\n")) console.log(`  ${line}`);
-        console.log("");
-        console.log("If that is a question, answer it and run the task again.");
+        if (said) {
+          console.log("It finished without changing anything, and asked nobody. It said:");
+          console.log("");
+          for (const line of said.split("\n")) console.log(`  ${line}`);
+          console.log("");
+          console.log("If that is a question, answer it and run the task again.");
+        } else {
+          // Nothing to quote. Worth saying plainly rather than printing a
+          // bare "no changes" and leaving the reader to wonder — a worker
+          // that produced no words at all usually means every tool it tried
+          // was refused.
+          console.log("It finished without changing anything, asked nobody, and said nothing.");
+          console.log("Check .maya/logs for what it was refused.");
+        }
       }
 
       store.close();

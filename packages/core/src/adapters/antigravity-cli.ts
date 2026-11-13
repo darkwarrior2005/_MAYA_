@@ -7,7 +7,7 @@ import type {
   AgentRunOptions,
 } from "./adapter.js";
 import { SubprocessAgentHandle, parseJsonLine } from "./subprocess-adapter.js";
-import { commandExists } from "./which.js";
+import { resolveExecutable } from "./which.js";
 
 export type AntigravityMode = "accept-edits" | "auto" | "plan";
 
@@ -35,8 +35,8 @@ export class AntigravityCliAdapter implements AgentAdapter {
   constructor(private readonly options: AntigravityAdapterOptions = {}) {}
 
   async check(): Promise<AdapterHealth> {
-    const installed = await commandExists("agy");
-    if (!installed) {
+    const resolvedPath = await resolveExecutable("agy");
+    if (!resolvedPath) {
       return {
         installed: false,
         authenticated: false,
@@ -46,6 +46,7 @@ export class AntigravityCliAdapter implements AgentAdapter {
     return {
       installed: true,
       authenticated: true,
+      resolvedPath,
       verified: false,
       detail: "assumes cached credentials from a prior interactive `agy` login (not verified)",
     };
@@ -211,6 +212,7 @@ export function makeAntigravityParser(): (line: string, agentId: string) => Agen
  *   input=24050 output=231  cache_read=19721 total=24281
  *   input=13574 output=74   cache_read=8192  total=13648
  *   input=2296  output=70   cache_read=19712 total=2366
+ *   input=23978 output=148  cache_read=19724 total=24126   (1.5.8, re-check)
  *
  * Read the first two alone and it looks as though `cache_read_tokens` sits
  * inside `input_tokens`, because `total_tokens` is `input + output` every

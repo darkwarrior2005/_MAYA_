@@ -86,7 +86,7 @@ function Line({ event }: { event: BusEvent }): ReactElement {
 }
 
 /** Which events are worth a line, and what it says. Null means "not shown". */
-function describe(event: BusEvent): string | null {
+export function describe(event: BusEvent): string | null {
   const payload = event.payload;
   switch (payload.type) {
     case "text":
@@ -124,7 +124,9 @@ function describe(event: BusEvent): string | null {
         ? `Operator: ${payload.answer}`
         : `no answer: ${payload.answer}`;
     case "worker_stopped_short":
-      return `${payload.agentId} finished without changing anything, and asked nobody: ${payload.lastWords}`;
+      return payload.lastWords
+        ? `${payload.agentId} finished without changing anything, and asked nobody: ${payload.lastWords}`
+        : `${payload.agentId} finished without changing anything, asked nobody, and said nothing`;
     // Usage drives the info panel rather than the transcript.
     case "usage":
       return null;
@@ -133,7 +135,7 @@ function describe(event: BusEvent): string | null {
   }
 }
 
-function kind(event: BusEvent): string {
+export function kind(event: BusEvent): string {
   const type = event.payload.type;
   if (type === "user_message") return "user";
   if (type === "error") return "error";
