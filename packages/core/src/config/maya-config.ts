@@ -20,9 +20,19 @@ export interface WorkerProfile {
   maxTurns?: number;
   maxBudgetUsd?: number;
   /**
-   * Tool permissions in the underlying CLI's own pattern syntax, e.g.
-   * ["write", "shell(git:*)"] for Copilot. Omitted means the adapter's
-   * conservative default (edits only, no shell).
+   * Tool permissions in the underlying CLI's own pattern syntax. Omitted means
+   * the adapter's conservative default: edits only, no shell.
+   *
+   * **The syntax is per tool, and the grammars do not overlap.** Copilot takes
+   * `write`, `write(src/**)`, `shell(git:*)`; Antigravity takes
+   * `command(npm test)`, `command(*)`, `mcp(server/tool)` and friends, which
+   * it is given as session-only `--settings` so its own settings.json is never
+   * written to. A pattern from the wrong tool grants **nothing**, silently,
+   * and the run then looks like an agent that declined the work — so each
+   * adapter validates these against its own grammar and refuses before
+   * spawning rather than dropping what it does not understand. Codex refuses
+   * a list outright: it takes a sandbox policy instead, and that is not a
+   * field here (see below).
    */
   allowedTools?: string[];
   deniedTools?: string[];
@@ -99,7 +109,12 @@ export const defaultConfig = (): MayaConfig => ({
       stallTimeoutSec: DEFAULT_STALL_TIMEOUT_SEC,
       enabled: false,
       // Codex grants permission with a sandbox policy rather than a tool
-      // list, so this worker takes `sandbox`, not `allowedTools`.
+      // list, and `codex-cli.ts` refuses an `allowedTools` list outright
+      // instead of quietly ignoring it. The policy itself is an adapter
+      // option, not a field on this profile: it is `workspace-write` for
+      // every Codex worker, and changing it per worker would mean registering
+      // the adapter as a project plugin with its own options. This comment
+      // used to claim the profile "takes `sandbox`", which it never has.
     },
   ],
 });
