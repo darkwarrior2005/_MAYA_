@@ -73,4 +73,27 @@ export interface AgentReport {
   live: boolean;
   agents: AgentScorecard[];
   platform: PlatformNote[];
+  /** Maya itself, alongside the tools it drives. */
+  maya: MayaCharacter;
+}
+
+/**
+ * Maya as one of the cast, so a page showing what each assistant is good and
+ * bad at can show the same of the thing orchestrating them.
+ *
+ * It has no `probes` and no `stats`, and that absence is deliberate: every
+ * figure on an agent's card came from running that agent, and there is no
+ * equivalent measurement of Maya to put beside them. Inventing a score for
+ * the host would be the one unmeasured number on a page whose whole point is
+ * that the numbers are measured.
+ *
+ * `cons` are not written by hand either — they are the platform notes that
+ * are still open, so this card cannot quietly stop admitting something the
+ * rest of the codebase still records.
+ */
+export interface MayaCharacter {
+  displayName: string;
+  tagline: string;
+  pros: string[];
+  cons: string[];
 }

@@ -234,3 +234,44 @@ export const PLATFORM_NOTES: PlatformNote[] = [
     severity: "handled",
   },
 ];
+
+/**
+ * Maya's own card, for the cast page.
+ *
+ * The pros are the claims this project is prepared to defend, and each one is
+ * a thing the code actually does rather than a thing it aspires to — the
+ * invariants in CLAUDE.md and the write-ups in docs/FINDINGS.md are where
+ * each comes from.
+ *
+ * The cons are deliberately **not** written here. They are read from the
+ * platform notes that are still `open`, so Maya's card cannot quietly stop
+ * admitting something the rest of the codebase still records: closing a note
+ * removes it from the card, and adding one puts it there, with no second list
+ * to keep in step. If every note is handled the card says so rather than
+ * pretending there is nothing to say.
+ */
+export const MAYA_PROS = [
+  "The Operator alone merges, and never merges work that failed, stalled or came back empty",
+  "Each worker edits its own git worktree, so one going wrong cannot touch your files",
+  "No assistant is ever passed a skip-all-permissions flag; what each may do is written down per worker",
+  "A tool reporting success is not taken at its word — a recorded error, a stall, or a run that changed nothing and told nobody all override it",
+  "Both windows read one event log and replay from their last-seen event, so neither can go quietly stale",
+  "Every figure on an agent's card was measured by running that agent; a measurement that could not be taken says so instead of showing a number",
+  "A run is bounded three ways — silence, wall clock and tokens — so a looping assistant is stopped rather than left spending",
+] as const;
+
+/** Maya's tagline on the cast page. */
+export const MAYA_TAGLINE = "Holds the git history, and has the only say over what lands.";
+
+/**
+ * What Maya is still bad at, taken from the platform notes rather than a
+ * hand-written list. Only the open ones: a handled note is a trap that has
+ * been dealt with, and listing it as a weakness would be false modesty.
+ */
+export function openPlatformWeaknesses(notes: PlatformNote[]): string[] {
+  const open = notes.filter((note) => note.severity === "open");
+  if (open.length === 0) {
+    return ["Nothing recorded as open — every platform note is marked handled"];
+  }
+  return open.map((note) => `${note.title} — ${note.mitigation}`);
+}

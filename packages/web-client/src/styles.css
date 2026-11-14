@@ -1193,3 +1193,289 @@ p.error {
     transform: none;
   }
 }
+
+/* --- the cast ------------------------------------------------------------ */
+/*
+ * Figures you pick from, with the dossier below. Everything is drawn with the
+ * existing tokens and `currentColor`, so a figure follows the theme and its
+ * own state rather than carrying light-mode colours; and every animation sits
+ * behind the reduced-motion query at the bottom, because a page of bobbing
+ * puppets is exactly what someone turns that setting on to stop.
+ */
+.cast {
+  padding: 18px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+}
+
+.cast-empty {
+  padding: 40px 20px;
+  color: var(--muted);
+}
+.cast-empty h2 {
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.cast-head h2 {
+  margin: 0 0 4px;
+}
+.cast-head p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.stage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  /* Tops, not bottoms: "Google Antigravity CLI" wraps to two lines, and
+     aligning the bottoms lifted its figure out of line with the rest. */
+  align-items: flex-start;
+}
+
+.figure {
+  flex: 0 0 auto;
+  width: 124px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px 4px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  color: var(--muted);
+  font: inherit;
+  /* Each figure bobs on its own offset; the delay comes from the component. */
+  animation: cast-idle 4.2s ease-in-out infinite;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 160ms ease;
+}
+.figure:hover,
+.figure:focus-visible {
+  border-color: var(--line);
+  background: var(--panel);
+}
+.figure.chosen {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--panel);
+  transform: translateY(-4px);
+}
+/* Chosen does not repaint the figure. Colour is what says ready, locked or
+   absent, and the one you are reading about is the one that most needs to
+   keep saying it — the border, the lift and the panel already mark it. */
+
+.figure-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.figure-state {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.puppet {
+  width: 84px;
+  height: 116px;
+  overflow: visible;
+}
+.puppet-shadow {
+  fill: var(--line);
+  opacity: 0.55;
+  animation: cast-shadow 4.2s ease-in-out infinite;
+  animation-delay: inherit;
+}
+.puppet-body {
+  animation: cast-hover 4.2s ease-in-out infinite;
+  animation-delay: inherit;
+}
+
+/* The drawing itself: strokes take the figure's colour, so one rule per
+   state tints the whole puppet. */
+.puppet .spine,
+.puppet .arms,
+.puppet .legs,
+.puppet .orbit-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.puppet .orbit-ring {
+  stroke-width: 1.2;
+  stroke-dasharray: 3 7;
+  opacity: 0.7;
+}
+.puppet .core,
+.puppet .orbit-mark {
+  fill: currentColor;
+}
+.puppet .core-inner {
+  fill: var(--panel);
+}
+
+/* State decides the colour and how alive it looks. */
+.figure-host {
+  color: var(--accent);
+}
+.figure-ready {
+  color: var(--ok);
+}
+.figure-locked {
+  color: var(--warn);
+}
+.figure-absent {
+  color: var(--muted);
+  opacity: 0.55;
+  /* Not installed: standing still, not breathing. */
+  animation: none;
+}
+.figure-absent .puppet-body,
+.figure-absent .puppet-shadow {
+  animation: none;
+}
+.figure-absent .puppet .spine,
+.figure-absent .puppet .arms,
+.figure-absent .puppet .legs {
+  stroke-dasharray: 4 4;
+}
+
+/* Maya's satellites turn, slowly, and only for the host. */
+.figure-host .orbit {
+  transform-origin: 40px 44px;
+  animation: cast-orbit 26s linear infinite;
+}
+
+.dossier {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dossier header h3 {
+  margin: 0;
+}
+.dossier .tagline {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.cast-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 18px;
+  margin: 0;
+}
+.cast-stats dt {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cast-stats dd {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cast-stats .bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-head);
+  overflow: hidden;
+}
+.cast-stats .fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.cast-stats em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 5.5em;
+}
+/* An unmeasured bar is visibly not a measurement. */
+.cast-stats .unmeasured .fill {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.cast-note {
+  margin: 0;
+  font-size: 12px;
+  max-width: 80ch;
+}
+
+@keyframes cast-idle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes cast-hover {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+@keyframes cast-shadow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(0.88);
+    opacity: 0.35;
+  }
+}
+@keyframes cast-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .figure,
+  .figure.chosen,
+  .puppet-body,
+  .puppet-shadow,
+  .figure-host .orbit {
+    animation: none;
+    transform: none;
+  }
+  .figure {
+    transition: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .stage {
+    justify-content: center;
+  }
+  .figure {
+    width: 104px;
+  }
+}

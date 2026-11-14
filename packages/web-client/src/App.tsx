@@ -13,6 +13,7 @@ import { ConflictPrompt } from "./ConflictPrompt.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { GitTree } from "./GitTree.js";
 import { AgentArena } from "./AgentArena.js";
+import { Cast } from "./Cast.js";
 import { AgentsRoster, AgentsToDo, InfoPanel, SecretChannel } from "./Panels.js";
 import { useBus } from "./useBus.js";
 
@@ -107,6 +108,9 @@ export function App(): ReactElement {
           <a className={route === "arena" ? "on" : ""} href="#/arena">
             Agents
           </a>
+          <a className={route === "cast" ? "on" : ""} href="#/cast">
+            Cast
+          </a>
         </nav>
         <span className={`conn conn-${connection}`}>{connectionLabel(connection)}</span>
       </header>
@@ -114,8 +118,9 @@ export function App(): ReactElement {
       {problem && <p className="banner error">{problem}</p>}
 
       {route === "arena" && <AgentArena />}
+      {route === "cast" && <Cast />}
 
-      {route !== "arena" && (
+      {route !== "arena" && route !== "cast" && (
       <>
       <main className="columns">
         <section className="panel panel-tree">

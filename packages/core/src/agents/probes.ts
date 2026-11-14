@@ -22,7 +22,15 @@ import type { AgentAdapter } from "../adapters/adapter.js";
 import { withRunLimits } from "../adapters/watchdog.js";
 import type { MayaConfig } from "../config/maya-config.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
-import { PLATFORM_NOTES, TAGLINES, knownCons, knownPros } from "./traits.js";
+import {
+  MAYA_PROS,
+  MAYA_TAGLINE,
+  PLATFORM_NOTES,
+  TAGLINES,
+  knownCons,
+  knownPros,
+  openPlatformWeaknesses,
+} from "./traits.js";
 
 export interface ProbeOptions {
   /**
@@ -64,11 +72,22 @@ export async function probeAgents(
     agents.push(await probeOne(adapter, options, say));
   }
 
+  const platform = platformNotes(config);
   return {
     checkedAt: new Date().toISOString(),
     live: options.live === true,
     agents,
-    platform: platformNotes(config),
+    platform,
+    // Maya in the same report as the tools it drives, so a page can show what
+    // the host is good and bad at beside them. Its weaknesses come from the
+    // platform notes that are still open rather than a list written here, so
+    // the card cannot drift from what the codebase records.
+    maya: {
+      displayName: "Maya",
+      tagline: MAYA_TAGLINE,
+      pros: [...MAYA_PROS],
+      cons: openPlatformWeaknesses(platform),
+    },
   };
 }
 

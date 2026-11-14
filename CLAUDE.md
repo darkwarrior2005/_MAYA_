@@ -96,7 +96,7 @@ names — see `docs/adr/0004`.
 | `packages/cli/src/commands` | `init`, `run`, `start`, `attach`, `doctor`. |
 | `packages/cli/src/tui` | The pane view. `layout.ts` is pure; `screen.ts` owns the terminal; `pane-state.ts` routes events; `bus-client.ts` is the socket. |
 | `packages/mcp-server` | Maya as an MCP server over stdio, so another agent can read the session, post to it, reach the person, and answer the Operator. Talks to the daemon over HTTP like any other client. |
-| `packages/web-client` | React + Vite: git tree, repository browser, chat, and the Agents page (`#/arena`). Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
+| `packages/web-client` | React + Vite: git tree, repository browser, chat, the Agents page (`#/arena`) and the cast page (`#/cast`). Both agent pages render one report, so they cannot disagree about what was measured. Built to `dist`, served by the daemon. Imports `@maya/shared-types` only — never `@maya/core`, which pulls native modules. |
 
 Per-project state lives in `<repo>/.maya/` — `config.json`, `state.db`,
 `daemon.lock`, `agents/<id>/*.md|.html`, `logs/<id>.ndjson`.

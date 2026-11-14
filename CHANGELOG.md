@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **A cast page**, at `#/cast` in the web interface: Maya and the four
+  assistants as animated figures you pick from, each with what it is good and
+  bad at. The roster at `#/arena` is for comparing four cards side by side;
+  this is for meeting them one at a time. Both read the same report, so they
+  cannot disagree about what was measured.
+- **Maya has a card of its own**, which it did not before. Its strengths are
+  the invariants the project is prepared to defend. Its weaknesses are *not*
+  written by hand — they are read from the platform notes that are still
+  open, so the card cannot quietly stop admitting something the codebase
+  still records: close a note and it leaves the card, add one and it appears.
+  It deliberately has no stat bars, because every figure on an assistant's
+  card came from running that assistant and there is no equivalent run of the
+  host to put beside them.
+- Every animation sits behind `prefers-reduced-motion`, since a page of
+  bobbing figures is what someone turns that setting on to stop.
+
 ## 1.1.0 — 13 Nov 2026
 
 One fix, to the last real limitation left after build 1.

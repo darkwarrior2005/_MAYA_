@@ -328,7 +328,14 @@ reads it.
 - **Direct messages** — a separate panel for anything an assistant wants to
   tell *you* rather than the Operator.
 - **Usage** — tokens and cost per assistant and per model, for this session.
-- **Agents page** — a scorecard for each assistant, at `#/arena`.
+- **Agents page** (`#/arena`) — a scorecard for each assistant side by side:
+  stat bars, strengths, weaknesses, and every check that was run.
+- **Cast page** (`#/cast`) — the same information one at a time, as figures
+  you pick from, with Maya among them so you can read what the thing running
+  the show is good and bad at too.
+
+The two agent pages read the same report, so they cannot disagree about what
+was measured. The roster is for comparing; the cast is for meeting them.
 
 Both windows show the same session. Close either one and the work carries on;
 reopen it and it catches up on what it missed.
