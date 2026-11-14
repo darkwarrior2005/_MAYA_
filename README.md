@@ -555,6 +555,8 @@ else on your machine.
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | `maya: command not found` | The install folder is not on your PATH yet. | Open a new terminal, or `export PATH="$HOME/.local/bin:$PATH"`. |
+| `maya` still works after you uninstalled it | There is a second install, from a different `--prefix` and pointing at a different clone. | `Get-Command maya -All` or `command -v maya` says which one is answering. See [uninstalling](#uninstalling). |
+| `maya` runs code you did not just change | The install on your PATH points at a different clone than the one you are editing. | `Get-Content (Get-Command maya).Source` names the clone it runs. |
 | `git has no user.name/user.email` | Git cannot commit for an anonymous person. | Set both with `git config --global`, as above. |
 | `<dir> does not exist` | You pointed at a folder that is not there. | `maya init <dir>` creates it. |
 | `pnpm is not on PATH` while installing | Node 25 dropped corepack. | `npm install -g pnpm --prefix "$HOME/.local"`, then run the installer again. |
@@ -575,22 +577,55 @@ what Maya understood from it.
 
 ## Uninstalling
 
-Delete the installed links and the clone:
+**Start by asking which one you are running.** You may have more than one:
+`--prefix` and `-Prefix` install somewhere else, and each install points at
+the clone it was run from. Deleting the install you assumed you had, while
+`maya` keeps working, means there is a second one.
 
 ```bash
-rm ~/.local/bin/maya ~/.local/bin/maya-mcp && rm -rf /path/to/_MAYA_
+command -v maya; command -v maya-mcp
+```
+
+```powershell
+Get-Command maya -All | Select-Object Source
+```
+
+That prints the shim actually on your PATH. Open it — it is two lines — and
+it names the clone it runs:
+
+```powershell
+Get-Content (Get-Command maya).Source
+```
+
+**Then delete that install and, if you want it gone, its clone.** The default
+locations are:
+
+```bash
+rm ~/.local/bin/maya ~/.local/bin/maya-mcp && rm -rf /path/to/the-clone
 ```
 
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\Programs\maya" -Recurse
 ```
 
-The installer leaves one line in your shell profile on Linux and macOS, marked
-`# added by Maya's install.sh`; on Windows it adds a folder to your user PATH.
-Remove either by hand if you want it gone.
+Repeat until `maya` is no longer found. Nothing else of Maya's is written
+outside those two places.
 
-Each project keeps its own `.maya/` folder. Delete those to remove the history
-of those sessions.
+**Finally, the PATH entry.** The installer adds one and deleting the install
+does not remove it — it simply stops pointing at anything. On Linux and macOS
+it is a line in your shell profile marked `# added by Maya's install.sh`. On
+Windows it is a folder in your user PATH:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "PATH",
+  (([Environment]::GetEnvironmentVariable("PATH","User") -split ';' |
+     Where-Object { $_ -notlike '*\maya\bin' }) -join ';'),
+  "User")
+```
+
+Each project also keeps its own `.maya/` folder, which holds that project's
+session history. Delete those separately; removing Maya does not touch them.
 
 ---
 
