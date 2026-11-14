@@ -585,6 +585,26 @@ so a failing assertion still releases handles. Context snapshots write to a temp
 file and rename, retrying on EBUSY/EPERM/EACCES; a failed snapshot logs and
 skips rather than crashing the daemon.
 
+**`pnpm package` used to uninstall the `maya` on your PATH.** The packager
+began with `rmSync(dist/maya)`, which is reasonable until you notice that
+`install.sh` and `install.ps1` run `npm install` *inside that directory*, and
+that the installed command is a link to `dist/maya/maya.mjs`. So on the one
+machine where someone had both installed Maya and was working on it, every
+rebuild deleted the command's runtime dependencies. The next `maya --version`
+died with `ERR_MODULE_NOT_FOUND: Cannot find package
+'@anthropic-ai/claude-agent-sdk'` — a package the person never asked for,
+with nothing in the message connecting it to the rebuild they had just done.
+It took a screenshot from the user to spot it, because nothing in the test
+suite installs Maya and then rebuilds.
+
+The clean now skips `node_modules` and removes everything else, so stale
+build output still goes. And the packager ends by saying whether the bundle's
+externals are actually installed beside it, naming the one command that fixes
+it — the three are deliberately not bundled, so the entry point imports them
+at runtime and a missing one is always this same opaque error.
+`tools/verify/packaged.mjs` leaves a marker in `node_modules`, packages again,
+and fails if the marker is gone.
+
 **`tsc -b` and a moved checkout.** Copying the tree with `robocopy` brings stale
 `.tsbuildinfo` files, so `tsc -b` decides everything is up to date and emits
 nothing while `dist/` is missing. Delete them after any move.

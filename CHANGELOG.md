@@ -17,6 +17,14 @@
   host to put beside them.
 - Every animation sits behind `prefers-reduced-motion`, since a page of
   bobbing figures is what someone turns that setting on to stop.
+- **Fixed: `pnpm package` uninstalled the `maya` on your PATH.** The installers
+  run `npm install` inside `dist/maya` and the installed command links into
+  it, but the packager deleted that whole directory on every run — so on a
+  machine where Maya was both installed and being worked on, any rebuild left
+  `maya` failing with `ERR_MODULE_NOT_FOUND` about a package nobody had
+  mentioned. The clean now keeps `node_modules`, the packager says whether the
+  runtime dependencies are present, and `tools/verify/packaged.mjs` fails if a
+  rebuild ever removes them again.
 
 ## 1.1.0 — 13 Nov 2026
 

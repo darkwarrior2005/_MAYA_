@@ -4,7 +4,15 @@
 //
 // Output is dist/maya: one bundled entry point, the web client beside it, and
 // a package.json naming only the dependencies that cannot be bundled.
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -26,7 +34,27 @@ const cliPkg = JSON.parse(readFileSync(join(repoRoot, "packages/cli/package.json
  */
 const EXTERNAL = ["better-sqlite3", "node-pty", "@anthropic-ai/claude-agent-sdk"];
 
-rmSync(out, { recursive: true, force: true });
+/**
+ * Clear the last build, but never `node_modules`.
+ *
+ * `install.sh` and `install.ps1` run `npm install` *in here*, and the `maya`
+ * on your PATH is a link to `dist/maya/maya.mjs`. Deleting this whole
+ * directory therefore uninstalls the command's dependencies on the machine
+ * doing the build — and the next `maya --version` dies with
+ * `ERR_MODULE_NOT_FOUND: Cannot find package '@anthropic-ai/claude-agent-sdk'`,
+ * which names a package the person never asked for and gives no hint that
+ * repackaging was what broke it. That happened, which is why this is no
+ * longer a plain `rmSync(out)`.
+ *
+ * Stale build output still goes: everything except `node_modules` is removed,
+ * so a renamed file cannot survive into the next bundle.
+ */
+if (existsSync(out)) {
+  for (const entry of readdirSync(out)) {
+    if (entry === "node_modules") continue;
+    rmSync(join(out, entry), { recursive: true, force: true });
+  }
+}
 mkdirSync(out, { recursive: true });
 
 const bundle = async (entry, outfile) =>
@@ -117,3 +145,26 @@ writeFileSync(
 );
 
 console.log(`\npackaged into ${out}`);
+
+/*
+ * Say whether this bundle can actually run.
+ *
+ * The three externals are not bundled, so the entry point imports them at
+ * runtime and fails with ERR_MODULE_NOT_FOUND if they are not installed
+ * beside it. That error names the package and nothing else — it does not say
+ * "run npm install here", and it does not say which of the two situations
+ * you are in: a fresh bundle nobody has installed into yet, or an install
+ * this build just stepped on. One line now beats decoding a stack trace
+ * later.
+ */
+const required = Object.keys(dependencies);
+const missing = required.filter((name) => !existsSync(join(out, "node_modules", name)));
+if (missing.length > 0) {
+  console.log(
+    `\n  ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not installed here yet.` +
+      "\n  The bundle needs them at runtime; they are deliberately not bundled." +
+      "\n\n    cd dist/maya && npm install --omit=dev\n",
+  );
+} else {
+  console.log("  its runtime dependencies are present\n");
+}

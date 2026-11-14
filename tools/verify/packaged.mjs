@@ -7,9 +7,17 @@
 // repository — which is the only way to catch a path resolved relative to the
 // workspace instead of to the bundle.
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { freePort } from "./ports.mjs";
@@ -55,6 +63,27 @@ const bundle = join(repoRoot, "dist/maya");
 if (!existsSync(join(bundle, "maya.mjs"))) {
   console.error("run `pnpm package` first");
   process.exit(2);
+}
+
+// --- packaging twice must not uninstall the command -------------------------
+// `install.sh` and `install.ps1` run `npm install` inside dist/maya, and the
+// `maya` on PATH is a link to the file in there. The packager used to delete
+// that whole directory on every run, so a developer who rebuilt uninstalled
+// their own command and got ERR_MODULE_NOT_FOUND about a package they had
+// never heard of. It happened to a real person before this check existed.
+{
+  const marker = join(bundle, "node_modules", ".packaging-probe");
+  mkdirSync(dirname(marker), { recursive: true });
+  writeFileSync(marker, "left by packaged.mjs", "utf8");
+  const again = await run(process.execPath, [join(repoRoot, "tools/package.mjs")], {
+    cwd: repoRoot,
+  });
+  check("packaging again succeeds", again.code === 0, again.out.trim().split(/\r?\n/).at(-1));
+  check(
+    "packaging again leaves node_modules alone, so an install survives a rebuild",
+    existsSync(marker),
+  );
+  rmSync(marker, { force: true });
 }
 
 // --- stand the bundle up somewhere unrelated --------------------------------
